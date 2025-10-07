@@ -134,19 +134,21 @@
         }
 
         async function getWeatherForecast(lat, lng) {
-            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&minutely=precipitation&timezone=Europe/Berlin&forecast_days=1`;
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            const data = await response.json();
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&minutely=precipitation&timezone=Europe/Berlin&forecast_days=1`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    const data = await response.json();
 
-            if (!data.minutely || !data.minutely.precipitation) 
-                throw new Error("Wetterdaten unvollständig");
+    // Prüfen, ob minutely-Daten existieren
+    if (!data.minutely || !data.minutely.time || !data.minutely.precipitation) {
+        throw new Error("Wetterdaten unvollständig oder nicht verfügbar für diesen Ort.");
+    }
 
-            return {
-                time: data.minutely.time,
-                precipitation: data.minutely.precipitation
-            };
-        }
+    return {
+        time: data.minutely.time,
+        precipitation: data.minutely.precipitation
+    };
+}
 
         function calculateSafeDeparture(durationSeconds, weatherData, desiredMinutes, rainThreshold) {
             const now = new Date();
