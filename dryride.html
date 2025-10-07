@@ -13,6 +13,9 @@
         .error { border-left-color: #f44336; color: #f44336; }
         .loading { border-left-color: #FF9800; color: #FF9800; }
         .optional { font-style: italic; color: #666; }
+        .timewindow { background: #e8f5e9; padding: 12px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #4CAF50; }
+        .timewindow-item { margin: 8px 0; }
+        .time-label { font-weight: bold; color: #2e7d32; }
     </style>
 </head>
 <body>
@@ -34,17 +37,20 @@
         const GOOGLE_API_KEY = 'AIzaSyCfmA_2wFMG2eXCJF0stxziBnM4CVNpoB0';
         const CORS_PROXY = 'https://cors-anywhere.herokuapp.com/';
 
+        const addresses = {
+            home: '',
+            start: ''
+        };
+
         function loadAddresses() {
-            return {
-                home: localStorage.getItem('homeAddress') || '',
-                start: localStorage.getItem('startAddress') || ''
-            };
+            addresses.home = document.getElementById('homeAddress').value.trim() || '';
+            addresses.start = document.getElementById('startAddress').value.trim() || '';
+            return addresses;
         }
 
         function saveHomeAddress() {
             const address = document.getElementById('homeAddress').value.trim();
             if (address) {
-                localStorage.setItem('homeAddress', address);
                 showResult('Hausadresse gespeichert!', 'success');
                 geocodeAddress(address, 'home').catch(error => console.error('Home-Geocode fehlgeschlagen:', error));
             } else {
@@ -55,14 +61,17 @@
         function saveStartAddress() {
             const address = document.getElementById('startAddress').value.trim();
             if (address) {
-                localStorage.setItem('startAddress', address);
                 showResult('Von-Adresse gespeichert!', 'success');
                 geocodeAddress(address, 'start').catch(error => console.error('Start-Geocode fehlgeschlagen:', error));
             } else {
-                localStorage.removeItem('startAddress');
                 showResult('Von-Adresse gelöscht (optional).', 'success');
             }
         }
+
+        const geocodeCache = {
+            home: { lat: null, lng: null },
+            start: { lat: null, lng: null }
+        };
 
         async function geocodeAddress(address, type) {
             const baseUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${GOOGLE_API_KEY}`;
@@ -75,8 +84,7 @@
                 if (data.status === 'OK' && data.results.length > 0) {
                     const lat = data.results[0].geometry.location.lat;
                     const lng = data.results[0].geometry.location.lng;
-                    localStorage.setItem(`${type}Lat`, lat);
-                    localStorage.setItem(`${type}Lng`, lng);
+                    geocodeCache[type] = { lat, lng };
                     console.log(`${type}-Koordinaten: ${lat}, ${lng}`);
                 } else {
                     throw new Error(`Geocoding-Fehler: ${data.status}`);
@@ -121,7 +129,6 @@
             }
         }
 
-        // Wetter mit current_weather + hourly precipitation
         async function getWeatherForecast(lat, lng) {
             const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&hourly=precipitation&timezone=Europe/Berlin&forecast_days=1`;
             console.log('Wetter-URL (Open-Meteo):', url);
@@ -142,62 +149,95 @@
 
         function calculateSafeDeparture(durationSeconds, weatherData) {
             const now = new Date();
-            const rainTimes = [];
             const currentPrecip = weatherData.current.precipitation || 0;
             const hourly = weatherData.hourly;
 
             console.log('Aktueller Niederschlag:', currentPrecip, 'mm/h');
 
             if (!hourly.time || !hourly.precipitation) {
-                return 'Wetterdaten unvollständig. Probiere später.';
+                return { message: 'Wetterdaten unvollständig. Probiere später.', windows: [] };
             }
 
-            // Wenn jetzt regnet: Nächste trockene Stunde finden
-            if (currentPrecip > 0.1) {
-                console.log('Regnet derzeit – suche nächste trockene Stunde.');
-                for (let i = 0; i < hourly.time.length; i++) {
-                    const hourTime = new Date(hourly.time[i]);
-                    if (hourTime > now && hourly.precipitation[i] <= 0.1 && rainTimes.length < 12) {
-                        rainTimes.push(hourTime.getTime() / 1000);
-                    }
-                }
-                if (rainTimes.length === 0) {
-                    return 'Es regnet jetzt und hält an. Warte oder nimm Alternativen!';
-                }
-                const nextDry = rainTimes[0];
-                const departureTime = nextDry - durationSeconds * 1000 - 300000;  // Minus Fahrtzeit + Puffer
-                const depDate = new Date(departureTime);
-                if (departureTime > now.getTime()) {
-                    return `Es regnet derzeit. Warte bis ${depDate.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}, dann losfahren. Fahrtzeit: ${Math.floor(durationSeconds / 60)} Min.`;
-                } else {
-                    return 'Es regnet jetzt und die nächste Lücke ist vorbei. Warte oder nimm Alternativen!';
-                }
-            }
+            const durationMinutes = Math.ceil(durationSeconds / 60);
+            const bufferMinutes = 5;
+            const totalMinutes = durationMinutes + bufferMinutes;
 
-            // Sonst: Bestehende Logik (nächster Regen)
+            // Zeitfenster sammeln
+            const timeWindows = [];
+            let currentWindow = null;
+
             for (let i = 0; i < hourly.time.length; i++) {
                 const hourTime = new Date(hourly.time[i]);
-                if (hourTime > now && rainTimes.length < 12) {
-                    if (hourly.precipitation[i] > 0.1) {
-                        rainTimes.push(hourTime.getTime() / 1000);
+                if (hourTime <= now) continue;
+
+                const isDry = hourly.precipitation[i] <= 0.1;
+                
+                // Prüfe ob genug Zeit bis zum nächsten Regen bleibt
+                let enoughTime = isDry;
+                if (isDry) {
+                    const arrivalTime = new Date(hourTime.getTime() + totalMinutes * 60000);
+                    for (let j = i; j < hourly.time.length; j++) {
+                        const checkTime = new Date(hourly.time[j]);
+                        if (checkTime > arrivalTime) break;
+                        if (hourly.precipitation[j] > 0.1) {
+                            enoughTime = false;
+                            break;
+                        }
+                    }
+                }
+
+                if (enoughTime) {
+                    if (!currentWindow) {
+                        currentWindow = { start: hourTime, end: hourTime };
+                    } else {
+                        currentWindow.end = hourTime;
+                    }
+                } else {
+                    if (currentWindow) {
+                        timeWindows.push(currentWindow);
+                        currentWindow = null;
                     }
                 }
             }
 
-            console.log('Regen-Zeiten gefunden:', rainTimes);
-
-            if (rainTimes.length === 0) {
-                return 'Kein Regen erwartet. Du kannst jederzeit losfahren!';
+            if (currentWindow) {
+                timeWindows.push(currentWindow);
             }
 
-            const nextRain = rainTimes[0];
-            const departureTime = nextRain - durationSeconds * 1000 - 300000;
-            const depDate = new Date(departureTime);
+            console.log('Gefundene Zeitfenster:', timeWindows);
 
-            if (departureTime > now.getTime()) {
-                return `Fahre um ${depDate.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} los, um trocken anzukommen. Fahrtzeit: ${Math.floor(durationSeconds / 60)} Min.`;
+            // Formatiere Ergebnis
+            if (timeWindows.length === 0) {
+                if (currentPrecip > 0.1) {
+                    return { message: 'Es regnet und es gibt heute keine trockene Phase mehr. Nimm Regenkleidung oder Alternativen!', windows: [] };
+                } else {
+                    return { message: 'Kein Zeitfenster gefunden. Möglicherweise regnet es bald durchgehend.', windows: [] };
+                }
+            }
+
+            // Prüfe ob wir im ersten Zeitfenster sind
+            const firstWindow = timeWindows[0];
+            if (now < firstWindow.start) {
+                // Müssen noch warten
+                return {
+                    message: `Es regnet bald. Warte bis zum ersten trockenen Zeitfenster.`,
+                    windows: timeWindows,
+                    duration: durationMinutes
+                };
+            } else if (now >= firstWindow.start && now <= firstWindow.end) {
+                // Wir sind im Zeitfenster
+                return {
+                    message: `Du kannst JETZT losfahren!`,
+                    windows: timeWindows,
+                    duration: durationMinutes,
+                    canGoNow: true
+                };
             } else {
-                return 'Es regnet bald oder schon. Warte oder nimm Alternativen!';
+                return {
+                    message: `Zeitfenster gefunden:`,
+                    windows: timeWindows,
+                    duration: durationMinutes
+                };
             }
         }
 
@@ -207,34 +247,33 @@
             resultDiv.className = 'loading';
 
             try {
-                const addresses = loadAddresses();
+                loadAddresses();
                 if (!addresses.home) {
                     throw new Error('Hausadresse nicht gespeichert! Gib sie ein und speichere.');
                 }
 
-                let homeLat = parseFloat(localStorage.getItem('homeLat'));
-                let homeLng = parseFloat(localStorage.getItem('homeLng'));
-                if (isNaN(homeLat) || isNaN(homeLng)) {
+                let homeLat = geocodeCache.home.lat;
+                let homeLng = geocodeCache.home.lng;
+                if (!homeLat || !homeLng) {
                     await geocodeAddress(addresses.home, 'home');
-                    homeLat = parseFloat(localStorage.getItem('homeLat'));
-                    homeLng = parseFloat(localStorage.getItem('homeLng'));
+                    homeLat = geocodeCache.home.lat;
+                    homeLng = geocodeCache.home.lng;
                 }
 
-                if (isNaN(homeLat) || isNaN(homeLng)) {
+                if (!homeLat || !homeLng) {
                     throw new Error('Haus-Koordinaten nicht gefunden.');
                 }
 
-                // Startpunkt: Von-Adresse priorisieren, sonst GPS
                 let startLat, startLng;
                 const startAddress = addresses.start;
                 if (startAddress) {
-                    startLat = parseFloat(localStorage.getItem('startLat'));
-                    startLng = parseFloat(localStorage.getItem('startLng'));
-                    if (isNaN(startLat) || isNaN(startLng)) {
+                    startLat = geocodeCache.start.lat;
+                    startLng = geocodeCache.start.lng;
+                    if (!startLat || !startLng) {
                         showResult('Geocode Von-Adresse...', 'loading');
                         await geocodeAddress(startAddress, 'start');
-                        startLat = parseFloat(localStorage.getItem('startLat'));
-                        startLng = parseFloat(localStorage.getItem('startLng'));
+                        startLat = geocodeCache.start.lat;
+                        startLng = geocodeCache.start.lng;
                     }
                     console.log('Start: Von-Adresse genutzt:', startAddress);
                 } else {
@@ -244,7 +283,7 @@
                     console.log('Start: GPS genutzt');
                 }
 
-                if (isNaN(startLat) || isNaN(startLng)) {
+                if (!startLat || !startLng) {
                     throw new Error('Start-Koordinaten nicht gefunden.');
                 }
 
@@ -255,12 +294,37 @@
                 const weatherData = await getWeatherForecast(startLat, startLng);
 
                 const result = calculateSafeDeparture(duration, weatherData);
-                showResult(result, 'success');
+                displayResult(result);
 
             } catch (error) {
                 showResult(`Fehler: ${error.message}`, 'error');
                 console.error('Gesamter Fehler:', error);
             }
+        }
+
+        function displayResult(result) {
+            const resultDiv = document.getElementById('result');
+            let html = `<strong>${result.message}</strong>`;
+
+            if (result.windows && result.windows.length > 0) {
+                html += `<div style="margin-top: 15px;"><strong>Trockene Zeitfenster (Fahrtzeit: ${result.duration} Min.):</strong></div>`;
+                
+                result.windows.forEach((window, index) => {
+                    const startTime = window.start.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                    const endTime = window.end.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                    
+                    const highlight = index === 0 && result.canGoNow ? 'background: #c8e6c9; font-weight: bold;' : '';
+                    
+                    html += `<div class="timewindow" style="${highlight}">
+                        <div class="timewindow-item">
+                            <span class="time-label">Zeitfenster ${index + 1}:</span> ${startTime} - ${endTime} Uhr
+                        </div>
+                    </div>`;
+                });
+            }
+
+            resultDiv.innerHTML = html;
+            resultDiv.className = 'success';
         }
 
         function showResult(message, type) {
@@ -270,9 +334,7 @@
         }
 
         window.onload = () => {
-            const addresses = loadAddresses();
-            document.getElementById('homeAddress').value = addresses.home;
-            document.getElementById('startAddress').value = addresses.start;
+            // Keine Adressen aus localStorage beim Laden
         };
     </script>
 </body>
