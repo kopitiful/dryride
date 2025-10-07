@@ -16,12 +16,12 @@
     </style>
 </head>
 <body>
-    <h1>DrRide: Trocken nach Hause radeln</h1>
-    
+    <h1>DyRide: Trocken nach Hause radeln</h1>
+
     <label for="homeAddress">Deine Hausadresse:</label>
     <input type="text" id="homeAddress" placeholder="z.B. Musterstraße 1, 10115 Berlin">
     <button onclick="saveHomeAddress()">Hausadresse speichern</button>
-    
+
     <label for="startAddress" class="optional">Von-Adresse (optional, z.B. Arbeit):</label>
     <input type="text" id="startAddress" placeholder="z.B. Bahnhofstraße 5, Den Haag">
     <button onclick="saveStartAddress()">Von-Adresse speichern</button>
@@ -35,19 +35,19 @@
         <option value="90">90 Minuten</option>
     </select>
 
-    <label for="rainThreshold">Maximal erlaubter Regen:</label>
-    <select id="rainThreshold">
-        <option value="0.2" selected>Leichter Regen</option>
-        <option value="1.0">Mittlerer Regen</option>
-        <option value="5.0">Starker Regen</option>
+    <label for="rainIntensity">Max. Regenintensität:</label>
+    <select id="rainIntensity">
+        <option value="0.2" selected>Leicht</option>
+        <option value="1.0">Mittel</option>
+        <option value="3.0">Stark</option>
     </select>
-    
+
     <button onclick="calculateSafeRide()" style="margin-top: 20px;">Berechnen: Wann losfahren?</button>
-    
+
     <div id="result"></div>
 
     <script async
-      src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCfmA_2wFMG2eXCJF0stxziBnM4CVNpoB0&libraries=places">
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCfmA_2wFMG2eXCJF0stxziBnM4CVNpoB0&libraries=places">
     </script>
 
     <script>
@@ -104,7 +104,10 @@
 
         function getCurrentLocation() {
             return new Promise((resolve, reject) => {
-                if (!navigator.geolocation) return reject(new Error('Geolocation nicht unterstützt.'));
+                if (!navigator.geolocation) {
+                    reject(new Error('Geolocation nicht unterstützt.'));
+                    return;
+                }
                 navigator.geolocation.getCurrentPosition(
                     (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
                     (err) => reject(new Error(`GPS-Fehler: ${err.message}`))
@@ -134,56 +137,64 @@
         }
 
         async function getWeatherForecast(lat, lng) {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&minutely=precipitation&timezone=Europe/Berlin&forecast_days=1`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    const data = await response.json();
+            // Versuch mit minutely
+            let url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&minutely=precipitation&timezone=Europe/Berlin&forecast_days=1`;
+            let response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            let data = await response.json();
 
-    // Prüfen, ob minutely-Daten existieren
-    if (!data.minutely || !data.minutely.time || !data.minutely.precipitation) {
-        throw new Error("Wetterdaten unvollständig oder nicht verfügbar für diesen Ort.");
-    }
+            if (data.minutely && data.minutely.time && data.minutely.precipitation) {
+                return { time: data.minutely.time, precipitation: data.minutely.precipitation, stepMinutes: 1 };
+            }
 
-    return {
-        time: data.minutely.time,
-        precipitation: data.minutely.precipitation
-    };
-}
+            // Fallback auf stündlich
+            url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=precipitation&timezone=Europe/Berlin&forecast_days=1`;
+            response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            data = await response.json();
 
-        function calculateSafeDeparture(durationSeconds, weatherData, desiredMinutes, rainThreshold) {
+            if (data.hourly && data.hourly.time && data.hourly.precipitation) {
+                return { time: data.hourly.time, precipitation: data.hourly.precipitation, stepMinutes: 60 };
+            }
+
+            throw new Error("Wetterdaten unvollständig oder nicht verfügbar für diesen Ort.");
+        }
+
+        function calculateSafeDeparture(durationSeconds, weatherData, desiredMinutes, maxPrecip) {
             const now = new Date();
             const times = weatherData.time;
             const precip = weatherData.precipitation;
+            const step = weatherData.stepMinutes;
+            if (!times || !precip) return { message: "Wetterdaten unvollständig.", departureTime: null };
 
-            if (!times || !precip) return { message: "Wetterdaten unvollständig", departureTime: null };
-
-            const stepsNeeded = desiredMinutes; // 1 Minute Interval
+            const stepsNeeded = Math.ceil(desiredMinutes / step);
             let startIndex = -1;
 
             for (let i = 0; i < precip.length - stepsNeeded; i++) {
-                const windowDry = precip.slice(i, i + stepsNeeded).every(p => p <= rainThreshold);
+                const windowDry = precip.slice(i, i + stepsNeeded).every(p => p <= maxPrecip);
                 if (windowDry && new Date(times[i]) > now) {
                     startIndex = i;
                     break;
                 }
             }
 
-            if (startIndex === -1) return { message: `☔️ In den nächsten Stunden kein ${desiredMinutes}-Minuten-Fenster ohne Regen gefunden.`, departureTime: null };
+            if (startIndex === -1)
+                return { message: `☔️ In den nächsten Stunden kein ${desiredMinutes}-Minuten-Fenster ohne Regen gefunden.`, departureTime: null };
 
             const startDryTime = new Date(times[startIndex]);
-            const departureTime = new Date(startDryTime.getTime() - (durationSeconds + 60) * 1000); // +1min buffer
+            const departureTime = new Date(startDryTime.getTime() - (durationSeconds + 300) * 1000);
             const durationMin = Math.floor(durationSeconds / 60);
             let waitMinutes = Math.round((departureTime - now) / 60000);
 
-            if (waitMinutes < 5) waitMinutes = 0; // jetzt losfahren
+            // Regeln für "jetzt losfahren"
+            if (waitMinutes <= 5) waitMinutes = 0;
 
-            const message = waitMinutes === 0 
-                ? `🚲 Du kannst jetzt losfahren und kommst trocken an! (Fahrtzeit: ${durationMin} Minuten)` 
-                : `🌤 Nächstes trockenes ${desiredMinutes}-Minuten-Fenster ab ${startDryTime.toLocaleTimeString('de-DE')}<br>
-                   🚲 Du kannst in ${waitMinutes} Minuten losfahren und kommst trocken an.<br>
-                   (Fahrtzeit: ${durationMin} Minuten)`;
-
-            return { message, departureTime };
+            return {
+                message: `🌤 Nächstes trockenes ${desiredMinutes}-Minuten-Fenster ab ${startDryTime.toLocaleTimeString('de-DE')}<br>
+                          🚲 Du kannst in ${waitMinutes} Minuten losfahren und kommst trocken an.<br>
+                          (Fahrtzeit: ${durationMin} Minuten)`,
+                departureTime: departureTime
+            };
         }
 
         function startCountdown(departureTime) {
@@ -206,7 +217,7 @@
                 const addresses = loadAddresses();
                 if (!addresses.home) throw new Error('Hausadresse nicht gespeichert!');
                 const desiredMinutes = parseInt(document.getElementById('dryWindow').value);
-                const rainThreshold = parseFloat(document.getElementById('rainThreshold').value);
+                const maxPrecip = parseFloat(document.getElementById('rainIntensity').value);
 
                 let homeLat = parseFloat(localStorage.getItem('homeLat'));
                 let homeLng = parseFloat(localStorage.getItem('homeLng'));
@@ -234,7 +245,7 @@
                 showResult('🌦 Hole Wetterdaten...', 'loading');
                 const weatherData = await getWeatherForecast(homeLat, homeLng);
 
-                const resultObj = calculateSafeDeparture(duration, weatherData, desiredMinutes, rainThreshold);
+                const resultObj = calculateSafeDeparture(duration, weatherData, desiredMinutes, maxPrecip);
                 showResult(resultObj.message, 'success');
 
                 startCountdown(resultObj.departureTime);
@@ -250,7 +261,7 @@
             document.getElementById('homeAddress').value = addresses.home;
             document.getElementById('startAddress').value = addresses.start;
             document.getElementById('dryWindow').addEventListener('change', calculateSafeRide);
-            document.getElementById('rainThreshold').addEventListener('change', calculateSafeRide);
+            document.getElementById('rainIntensity').addEventListener('change', calculateSafeRide);
         });
     </script>
 </body>
