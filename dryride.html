@@ -39,12 +39,13 @@
     
     <div id="result"></div>
 
-    <!-- Google Maps JS API -->
     <script async
       src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCfmA_2wFMG2eXCJF0stxziBnM4CVNpoB0&libraries=places">
     </script>
 
     <script>
+        let countdownInterval;
+
         function showResult(message, type) {
             const resultDiv = document.getElementById('result');
             resultDiv.innerHTML = message;
@@ -129,14 +130,13 @@
         }
 
         async function getWeatherForecast(lat, lng) {
-            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&minutely_15=precipitation_probability,precipitation&timezone=Europe/Berlin&forecast_days=1`;
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&minutely_15=precipitation&timezone=Europe/Berlin&forecast_days=1`;
             const response = await fetch(url);
             if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             const data = await response.json();
             return {
                 time: data.minutely_15.time,
-                precipitation: data.minutely_15.precipitation,
-                probability: data.minutely_15.precipitation_probability
+                precipitation: data.minutely_15.precipitation
             };
         }
 
@@ -160,22 +160,35 @@
             }
 
             if (startIndex === -1)
-                return `☔️ In den nächsten Stunden kein ${desiredMinutes}-Minuten-Fenster ohne Regen gefunden.`;
+                return { message: `☔️ In den nächsten Stunden kein ${desiredMinutes}-Minuten-Fenster ohne Regen gefunden.`, departureTime: null };
 
             const startDryTime = new Date(times[startIndex]);
-            const endDryTime = new Date(startDryTime.getTime() + desiredMinutes * 60000);
             const departureTime = new Date(startDryTime.getTime() - (durationSeconds + 300) * 1000);
             const durationMin = Math.floor(durationSeconds / 60);
 
-            if (departureTime < now)
-                return `🌦 Trockenes Fenster ab ${startDryTime.toLocaleTimeString('de-DE')} bis ${endDryTime.toLocaleTimeString('de-DE')} — aber du müsstest schon los sein.`;
+            let waitMinutes = Math.round((departureTime - now) / 60000);
+            if (waitMinutes < 0) waitMinutes = 0;
 
-            return `
-                🌤 <strong>Nächstes trockenes ${desiredMinutes}-Minuten-Fenster:</strong><br>
-                ${startDryTime.toLocaleTimeString('de-DE')} – ${endDryTime.toLocaleTimeString('de-DE')}<br><br>
-                🚲 <strong>Empfohlene Abfahrt:</strong> ${departureTime.toLocaleTimeString('de-DE')}
-                <br>(Fahrtzeit: ${durationMin} Minuten)
-            `;
+            return {
+                message: `🌤 Nächstes trockenes ${desiredMinutes}-Minuten-Fenster ab ${startDryTime.toLocaleTimeString('de-DE')}<br>
+                          🚲 Du kannst in ${waitMinutes} Minuten losfahren und kommst trocken an.<br>
+                          (Fahrtzeit: ${durationMin} Minuten)`,
+                departureTime: departureTime
+            };
+        }
+
+        function startCountdown(departureTime) {
+            if (countdownInterval) clearInterval(countdownInterval);
+            if (!departureTime) return;
+
+            countdownInterval = setInterval(() => {
+                const now = new Date();
+                let diff = Math.round((departureTime - now) / 60000);
+                if (diff < 0) diff = 0;
+                const resultDiv = document.getElementById('result');
+                resultDiv.innerHTML = `🚲 Abfahrt in ${diff} Minuten`;
+                if (diff <= 0) clearInterval(countdownInterval);
+            }, 60000);
         }
 
         async function calculateSafeRide() {
@@ -211,8 +224,10 @@
                 showResult('🌦 Hole Wetterdaten...', 'loading');
                 const weatherData = await getWeatherForecast(homeLat, homeLng);
 
-                const result = calculateSafeDeparture(duration, weatherData, desiredMinutes);
-                showResult(result, 'success');
+                const resultObj = calculateSafeDeparture(duration, weatherData, desiredMinutes);
+                showResult(resultObj.message, 'success');
+
+                startCountdown(resultObj.departureTime);
 
             } catch (error) {
                 showResult(`❌ Fehler: ${error.message}`, 'error');
