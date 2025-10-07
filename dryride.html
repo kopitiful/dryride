@@ -14,8 +14,10 @@
         .loading { border-left-color: #FF9800; color: #FF9800; }
         .optional { font-style: italic; color: #666; }
         .timewindow { background: #e8f5e9; padding: 12px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #4CAF50; }
+        .timewindow.active { background: #c8e6c9; font-weight: bold; }
         .timewindow-item { margin: 8px 0; }
         .time-label { font-weight: bold; color: #2e7d32; }
+        .info { color: #666; font-size: 0.9em; margin-top: 5px; }
     </style>
 </head>
 <body>
@@ -40,6 +42,11 @@
         const addresses = {
             home: '',
             start: ''
+        };
+
+        const geocodeCache = {
+            home: { lat: null, lng: null },
+            start: { lat: null, lng: null }
         };
 
         function loadAddresses() {
@@ -68,11 +75,6 @@
             }
         }
 
-        const geocodeCache = {
-            home: { lat: null, lng: null },
-            start: { lat: null, lng: null }
-        };
-
         async function geocodeAddress(address, type) {
             const baseUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${GOOGLE_API_KEY}`;
             const url = CORS_PROXY + baseUrl;
@@ -91,7 +93,7 @@
                 }
             } catch (error) {
                 console.error(`${type}-Geocoding-Fehler:`, error);
-                showResult(`${type}-Geocoding-Fehler: ${error.message}.`, 'error');
+                throw error;
             }
         }
 
@@ -147,12 +149,9 @@
             }
         }
 
-        function calculateSafeDeparture(durationSeconds, weatherData) {
+        function calculateTimeWindows(durationSeconds, weatherData) {
             const now = new Date();
-            const currentPrecip = weatherData.current.precipitation || 0;
             const hourly = weatherData.hourly;
-
-            console.log('Aktueller Niederschlag:', currentPrecip, 'mm/h');
 
             if (!hourly.time || !hourly.precipitation) {
                 return { message: 'Wetterdaten unvollständig. Probiere später.', windows: [] };
@@ -162,81 +161,96 @@
             const bufferMinutes = 5;
             const totalMinutes = durationMinutes + bufferMinutes;
 
-            // Zeitfenster sammeln
-            const timeWindows = [];
-            let currentWindow = null;
+            console.log('Fahrtzeit:', durationMinutes, 'Min, Puffer:', bufferMinutes, 'Min, Gesamt:', totalMinutes, 'Min');
 
+            // Analysiere Wetterdaten minutengenau
+            const weatherMap = [];
             for (let i = 0; i < hourly.time.length; i++) {
-                const hourTime = new Date(hourly.time[i]);
-                if (hourTime <= now) continue;
+                const time = new Date(hourly.time[i]);
+                const precip = hourly.precipitation[i];
+                weatherMap.push({ time, precip, isDry: precip <= 0.1 });
+            }
 
-                const isDry = hourly.precipitation[i] <= 0.1;
+            console.log('Wetter-Map erstellt:', weatherMap.length, 'Einträge');
+
+            // Finde trockene Zeitfenster
+            const windows = [];
+            let windowStart = null;
+
+            for (let i = 0; i < weatherMap.length; i++) {
+                const current = weatherMap[i];
                 
-                // Prüfe ob genug Zeit bis zum nächsten Regen bleibt
-                let enoughTime = isDry;
-                if (isDry) {
-                    const arrivalTime = new Date(hourTime.getTime() + totalMinutes * 60000);
-                    for (let j = i; j < hourly.time.length; j++) {
-                        const checkTime = new Date(hourly.time[j]);
-                        if (checkTime > arrivalTime) break;
-                        if (hourly.precipitation[j] > 0.1) {
-                            enoughTime = false;
+                // Überspringe vergangene Zeiten
+                if (current.time <= now) continue;
+
+                // Prüfe ob wir ab diesem Zeitpunkt genug Zeit haben bis zum nächsten Regen
+                if (current.isDry) {
+                    const departureTime = new Date(current.time);
+                    const arrivalTime = new Date(departureTime.getTime() + totalMinutes * 60000);
+                    
+                    // Prüfe ob es bis zur Ankunft trocken bleibt
+                    let staysDry = true;
+                    for (let j = i; j < weatherMap.length; j++) {
+                        if (weatherMap[j].time > arrivalTime) break;
+                        if (!weatherMap[j].isDry) {
+                            staysDry = false;
                             break;
                         }
                     }
-                }
 
-                if (enoughTime) {
-                    if (!currentWindow) {
-                        currentWindow = { start: hourTime, end: hourTime };
+                    if (staysDry) {
+                        if (!windowStart) {
+                            windowStart = current.time;
+                        }
                     } else {
-                        currentWindow.end = hourTime;
+                        if (windowStart) {
+                            windows.push({ start: windowStart, end: weatherMap[i-1].time });
+                            windowStart = null;
+                        }
                     }
                 } else {
-                    if (currentWindow) {
-                        timeWindows.push(currentWindow);
-                        currentWindow = null;
+                    if (windowStart) {
+                        windows.push({ start: windowStart, end: weatherMap[i-1].time });
+                        windowStart = null;
                     }
                 }
             }
 
-            if (currentWindow) {
-                timeWindows.push(currentWindow);
+            // Schließe letztes Fenster ab
+            if (windowStart) {
+                windows.push({ start: windowStart, end: weatherMap[weatherMap.length - 1].time });
             }
 
-            console.log('Gefundene Zeitfenster:', timeWindows);
+            console.log('Gefundene Zeitfenster:', windows.length);
+            windows.forEach((w, i) => console.log(`Fenster ${i+1}:`, w.start.toLocaleTimeString(), '-', w.end.toLocaleTimeString()));
 
-            // Formatiere Ergebnis
-            if (timeWindows.length === 0) {
-                if (currentPrecip > 0.1) {
-                    return { message: 'Es regnet und es gibt heute keine trockene Phase mehr. Nimm Regenkleidung oder Alternativen!', windows: [] };
-                } else {
-                    return { message: 'Kein Zeitfenster gefunden. Möglicherweise regnet es bald durchgehend.', windows: [] };
-                }
+            // Erstelle Ergebnis
+            if (windows.length === 0) {
+                return { 
+                    message: 'Heute kein trockenes Zeitfenster mehr gefunden. Nimm Regenkleidung oder Alternativen!', 
+                    windows: [],
+                    duration: durationMinutes
+                };
             }
 
             // Prüfe ob wir im ersten Zeitfenster sind
-            const firstWindow = timeWindows[0];
-            if (now < firstWindow.start) {
-                // Müssen noch warten
+            const firstWindow = windows[0];
+            const isInWindow = now >= firstWindow.start && now <= firstWindow.end;
+
+            if (isInWindow) {
                 return {
-                    message: `Es regnet bald. Warte bis zum ersten trockenen Zeitfenster.`,
-                    windows: timeWindows,
-                    duration: durationMinutes
-                };
-            } else if (now >= firstWindow.start && now <= firstWindow.end) {
-                // Wir sind im Zeitfenster
-                return {
-                    message: `Du kannst JETZT losfahren!`,
-                    windows: timeWindows,
+                    message: '✅ Du kannst JETZT losfahren und kommst trocken an!',
+                    windows: windows,
                     duration: durationMinutes,
                     canGoNow: true
                 };
             } else {
+                const waitMinutes = Math.ceil((firstWindow.start - now) / 60000);
                 return {
-                    message: `Zeitfenster gefunden:`,
-                    windows: timeWindows,
-                    duration: durationMinutes
+                    message: `⏰ Warte noch ${waitMinutes} Minuten, dann kannst du losfahren!`,
+                    windows: windows,
+                    duration: durationMinutes,
+                    canGoNow: false
                 };
             }
         }
@@ -255,6 +269,7 @@
                 let homeLat = geocodeCache.home.lat;
                 let homeLng = geocodeCache.home.lng;
                 if (!homeLat || !homeLng) {
+                    showResult('Geocode Hausadresse...', 'loading');
                     await geocodeAddress(addresses.home, 'home');
                     homeLat = geocodeCache.home.lat;
                     homeLng = geocodeCache.home.lng;
@@ -277,6 +292,7 @@
                     }
                     console.log('Start: Von-Adresse genutzt:', startAddress);
                 } else {
+                    showResult('Hole GPS-Position...', 'loading');
                     const pos = await getCurrentLocation();
                     startLat = pos.lat;
                     startLng = pos.lng;
@@ -293,7 +309,7 @@
                 showResult('Hole Wetter...', 'loading');
                 const weatherData = await getWeatherForecast(startLat, startLng);
 
-                const result = calculateSafeDeparture(duration, weatherData);
+                const result = calculateTimeWindows(duration, weatherData);
                 displayResult(result);
 
             } catch (error) {
@@ -304,27 +320,30 @@
 
         function displayResult(result) {
             const resultDiv = document.getElementById('result');
-            let html = `<strong>${result.message}</strong>`;
+            let html = `<div style="font-size: 1.1em; margin-bottom: 15px;">${result.message}</div>`;
 
             if (result.windows && result.windows.length > 0) {
-                html += `<div style="margin-top: 15px;"><strong>Trockene Zeitfenster (Fahrtzeit: ${result.duration} Min.):</strong></div>`;
+                html += `<div class="info">Deine Fahrtzeit: ${result.duration} Minuten (+ 5 Min. Puffer)</div>`;
+                html += `<div style="margin-top: 15px;"><strong>🌤️ Trockene Zeitfenster heute:</strong></div>`;
                 
                 result.windows.forEach((window, index) => {
                     const startTime = window.start.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
                     const endTime = window.end.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
                     
-                    const highlight = index === 0 && result.canGoNow ? 'background: #c8e6c9; font-weight: bold;' : '';
+                    const isActive = index === 0 && result.canGoNow;
+                    const activeClass = isActive ? ' active' : '';
+                    const emoji = isActive ? '✅ ' : '🕐 ';
                     
-                    html += `<div class="timewindow" style="${highlight}">
+                    html += `<div class="timewindow${activeClass}">
                         <div class="timewindow-item">
-                            <span class="time-label">Zeitfenster ${index + 1}:</span> ${startTime} - ${endTime} Uhr
+                            ${emoji}<span class="time-label">Zeitfenster ${index + 1}:</span> ${startTime} - ${endTime} Uhr
                         </div>
                     </div>`;
                 });
             }
 
             resultDiv.innerHTML = html;
-            resultDiv.className = 'success';
+            resultDiv.className = '';
         }
 
         function showResult(message, type) {
@@ -332,10 +351,6 @@
             resultDiv.innerHTML = `<strong>${message}</strong>`;
             resultDiv.className = type;
         }
-
-        window.onload = () => {
-            // Keine Adressen aus localStorage beim Laden
-        };
     </script>
 </body>
 </html>
