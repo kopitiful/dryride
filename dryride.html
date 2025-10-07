@@ -16,7 +16,7 @@
     </style>
 </head>
 <body>
-    <h1>yRide: Trocken nach Hause radeln</h1>
+    <h1>Ride: Trocken nach Hause radeln</h1>
     
     <label for="homeAddress">Deine Hausadresse:</label>
     <input type="text" id="homeAddress" placeholder="z.B. Musterstraße 1, 10115 Berlin">
@@ -130,13 +130,14 @@
         }
 
         async function getWeatherForecast(lat, lng) {
-            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&minutely_5=precipitation&timezone=Europe/Berlin&forecast_days=1`;
+            // Hole 1-Minuten-Vorhersage
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&minutely_1=precipitation&timezone=Europe/Berlin&forecast_days=1`;
             const response = await fetch(url);
             if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             const data = await response.json();
             return {
-                time: data.minutely_5.time,
-                precipitation: data.minutely_5.precipitation
+                time: data.minutely_1.time,
+                precipitation: data.minutely_1.precipitation
             };
         }
 
@@ -146,7 +147,7 @@
             const precip = weatherData.precipitation;
             if (!times || !precip) return 'Wetterdaten unvollständig.';
 
-            const intervalMinutes = (new Date(times[1]) - new Date(times[0])) / 60000;
+            const intervalMinutes = 1; // feste 1-Minuten-Schritte
             const stepsNeeded = Math.ceil(desiredMinutes / intervalMinutes);
             const maxDryPrecip = 0.2;
 
@@ -165,15 +166,29 @@
             const startDryTime = new Date(times[startIndex]);
             const departureTime = new Date(startDryTime.getTime() - (durationSeconds + 300) * 1000);
             const durationMin = Math.floor(durationSeconds / 60);
+            const waitMinutes = Math.round((departureTime - now) / 60000);
 
-            let waitMinutes = Math.round((departureTime - now) / 60000);
-            if (waitMinutes < 0) waitMinutes = 0;
+            if (waitMinutes <= 5) {
+                return {
+                    message: `🚴‍♂️ Du kannst **jetzt** losfahren – es bleibt trocken!<br>(Fahrtzeit: ${durationMin} Minuten)`,
+                    departureTime: now
+                };
+            }
+
+            if (waitMinutes <= 15) {
+                return {
+                    message: `🌦 Das nächste trockene ${desiredMinutes}-Minuten-Fenster beginnt um ${startDryTime.toLocaleTimeString('de-DE')}<br>
+                              🚲 Du kannst in ${waitMinutes} Minuten losfahren (kurz warten reicht).<br>
+                              (Fahrtzeit: ${durationMin} Minuten)`,
+                    departureTime
+                };
+            }
 
             return {
                 message: `🌤 Nächstes trockenes ${desiredMinutes}-Minuten-Fenster ab ${startDryTime.toLocaleTimeString('de-DE')}<br>
                           🚲 Du kannst in ${waitMinutes} Minuten losfahren und kommst trocken an.<br>
                           (Fahrtzeit: ${durationMin} Minuten)`,
-                departureTime: departureTime
+                departureTime
             };
         }
 
@@ -226,7 +241,6 @@
 
                 const resultObj = calculateSafeDeparture(duration, weatherData, desiredMinutes);
                 showResult(resultObj.message, 'success');
-
                 startCountdown(resultObj.departureTime);
 
             } catch (error) {
@@ -244,3 +258,4 @@
     </script>
 </body>
 </html>
+
