@@ -130,13 +130,13 @@
         }
 
         async function getWeatherForecast(lat, lng) {
-            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&minutely_15=precipitation&timezone=Europe/Berlin&forecast_days=1`;
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&minutely_5=precipitation&timezone=Europe/Berlin&forecast_days=1`;
             const response = await fetch(url);
             if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             const data = await response.json();
             return {
-                time: data.minutely_15.time,
-                precipitation: data.minutely_15.precipitation
+                time: data.minutely_5.time,
+                precipitation: data.minutely_5.precipitation
             };
         }
 
