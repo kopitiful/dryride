@@ -1,4 +1,4 @@
-/*<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
     <meta charset="UTF-8">
@@ -12,6 +12,7 @@
         #result { margin-top: 20px; padding: 15px; background: white; border-radius: 5px; border-left: 4px solid #4CAF50; }
         .error { border-left-color: #f44336; color: #f44336; }
         .loading { border-left-color: #FF9800; color: #FF9800; }
+        .optional { font-style: italic; color: #666; }
     </style>
 </head>
 <body>
@@ -19,7 +20,11 @@
     
     <label for="homeAddress">Deine Hausadresse:</label>
     <input type="text" id="homeAddress" placeholder="z.B. Musterstraße 1, 10115 Berlin">
-    <button onclick="saveHomeAddress()">Adresse speichern</button>
+    <button onclick="saveHomeAddress()">Hausadresse speichern</button>
+    
+    <label for="startAddress" class="optional">Von-Adresse (optional, z.B. Arbeit):</label>
+    <input type="text" id="startAddress" placeholder="z.B. Bahnhofstraße 5, Den Haag">
+    <button onclick="saveStartAddress()">Von-Adresse speichern</button>
     
     <button onclick="calculateSafeRide()" style="margin-top: 20px;">Berechnen: Wann losfahren?</button>
     
@@ -29,25 +34,40 @@
         const GOOGLE_API_KEY = 'AIzaSyCfmA_2wFMG2eXCJF0stxziBnM4CVNpoB0';
         const CORS_PROXY = 'https://cors-anywhere.herokuapp.com/';
 
-        function loadHomeAddress() {
-            return localStorage.getItem('homeAddress') || '';
+        function loadAddresses() {
+            return {
+                home: localStorage.getItem('homeAddress') || '',
+                start: localStorage.getItem('startAddress') || ''
+            };
         }
 
         function saveHomeAddress() {
             const address = document.getElementById('homeAddress').value.trim();
             if (address) {
                 localStorage.setItem('homeAddress', address);
-                showResult('Adresse gespeichert! Klicke auf "Berechnen".', 'success');
-                geocodeAddress(address).catch(error => console.error('Geocode fehlgeschlagen:', error));
+                showResult('Hausadresse gespeichert!', 'success');
+                geocodeAddress(address, 'home').catch(error => console.error('Home-Geocode fehlgeschlagen:', error));
             } else {
-                showResult('Bitte Adresse eingeben!', 'error');
+                showResult('Bitte Hausadresse eingeben!', 'error');
             }
         }
 
-        async function geocodeAddress(address) {
+        function saveStartAddress() {
+            const address = document.getElementById('startAddress').value.trim();
+            if (address) {
+                localStorage.setItem('startAddress', address);
+                showResult('Von-Adresse gespeichert!', 'success');
+                geocodeAddress(address, 'start').catch(error => console.error('Start-Geocode fehlgeschlagen:', error));
+            } else {
+                localStorage.removeItem('startAddress');
+                showResult('Von-Adresse gelöscht (optional).', 'success');
+            }
+        }
+
+        async function geocodeAddress(address, type) {
             const baseUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${GOOGLE_API_KEY}`;
             const url = CORS_PROXY + baseUrl;
-            console.log('Geocoding-URL:', url);
+            console.log(`${type}-Geocoding-URL:`, url);
             try {
                 const response = await fetch(url);
                 if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -55,16 +75,15 @@
                 if (data.status === 'OK' && data.results.length > 0) {
                     const lat = data.results[0].geometry.location.lat;
                     const lng = data.results[0].geometry.location.lng;
-                    localStorage.setItem('homeLat', lat);
-                    localStorage.setItem('homeLng', lng);
-                    console.log(`Haus-Koordinaten: ${lat}, ${lng}`);
-                    showResult('Koordinaten gespeichert!', 'success');
+                    localStorage.setItem(`${type}Lat`, lat);
+                    localStorage.setItem(`${type}Lng`, lng);
+                    console.log(`${type}-Koordinaten: ${lat}, ${lng}`);
                 } else {
                     throw new Error(`Geocoding-Fehler: ${data.status}`);
                 }
             } catch (error) {
-                console.error('Geocoding-Fehler:', error);
-                showResult(`Geocoding-Fehler: ${error.message}.`, 'error');
+                console.error(`${type}-Geocoding-Fehler:`, error);
+                showResult(`${type}-Geocoding-Fehler: ${error.message}.`, 'error');
             }
         }
 
@@ -102,7 +121,6 @@
             }
         }
 
-        // Neue Wetter-API: Open-Meteo (key-frei, stündlich)
         async function getWeatherForecast(lat, lng) {
             const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=precipitation&timezone=Europe/Berlin&forecast_days=1`;
             console.log('Wetter-URL (Open-Meteo):', url);
@@ -120,7 +138,6 @@
 
         function calculateSafeDeparture(durationSeconds, weatherData) {
             const now = new Date();
-            const nowHour = now.getHours();
             const rainTimes = [];
 
             if (!weatherData.time || !weatherData.precipitation) {
@@ -128,16 +145,12 @@
             }
 
             // Finde Regen in nächsten 12 Stunden (Regen > 0.1 mm/h)
-            for (let i = 0; i < 12; i++) {
+            for (let i = 0; i < weatherData.time.length; i++) {
                 const hourTime = new Date(weatherData.time[i]);
-                const hourIndex = nowHour + i;
-                if (hourIndex < 24) {
+                if (hourTime > now && rainTimes.length < 12) {  // Nächste Stunden
                     if (weatherData.precipitation[i] > 0.1) {
-                        rainTimes.push(hourTime.getTime() / 1000);  // Timestamp
+                        rainTimes.push(hourTime.getTime() / 1000);
                     }
-                } else {
-                    // Über Mitternacht – vereinfacht
-                    break;
                 }
             }
 
@@ -147,7 +160,7 @@
                 return 'Kein Regen erwartet. Du kannst jederzeit losfahren!';
             }
 
-            const nextRain = rainTimes[0];  // Nächste Regen-Stunde
+            const nextRain = rainTimes[0];
             const departureTime = nextRain - durationSeconds * 1000 - 300000;  // 5 Min Puffer in ms
             const depDate = new Date(departureTime);
 
@@ -164,38 +177,51 @@
             resultDiv.className = 'loading';
 
             try {
-                let homeAddress = loadHomeAddress();
-                if (!homeAddress) {
-                    throw new Error('Adresse nicht gespeichert! Gib sie ein und speichere.');
+                const addresses = loadAddresses();
+                if (!addresses.home) {
+                    throw new Error('Hausadresse nicht gespeichert! Gib sie ein und speichere.');
                 }
-                document.getElementById('homeAddress').value = homeAddress;
 
                 let homeLat = parseFloat(localStorage.getItem('homeLat'));
                 let homeLng = parseFloat(localStorage.getItem('homeLng'));
-                console.log('Geladene Home-Koords:', homeLat, homeLng);
                 if (isNaN(homeLat) || isNaN(homeLng)) {
-                    showResult('Geocode Adresse...', 'loading');
-                    await geocodeAddress(homeAddress);
+                    await geocodeAddress(addresses.home, 'home');
                     homeLat = parseFloat(localStorage.getItem('homeLat'));
                     homeLng = parseFloat(localStorage.getItem('homeLng'));
                 }
 
                 if (isNaN(homeLat) || isNaN(homeLng)) {
-                    throw new Error('Koordinaten nicht gefunden. Probiere eine andere Adresse.');
+                    throw new Error('Haus-Koordinaten nicht gefunden.');
                 }
 
-                let currentPos;
-                try {
-                    currentPos = await getCurrentLocation();
-                } catch (error) {
-                    throw new Error(`Standort-Fehler: ${error.message}. Erlaube GPS.`);
+                // Startpunkt: Von-Adresse priorisieren, sonst GPS
+                let startLat, startLng;
+                const startAddress = addresses.start;
+                if (startAddress) {
+                    startLat = parseFloat(localStorage.getItem('startLat'));
+                    startLng = parseFloat(localStorage.getItem('startLng'));
+                    if (isNaN(startLat) || isNaN(startLng)) {
+                        showResult('Geocode Von-Adresse...', 'loading');
+                        await geocodeAddress(startAddress, 'start');
+                        startLat = parseFloat(localStorage.getItem('startLat'));
+                        startLng = parseFloat(localStorage.getItem('startLng'));
+                    }
+                    console.log('Start: Von-Adresse genutzt:', startAddress);
+                } else {
+                    startLat = (await getCurrentLocation()).lat;
+                    startLng = (await getCurrentLocation()).lng;
+                    console.log('Start: GPS genutzt');
+                }
+
+                if (isNaN(startLat) || isNaN(startLng)) {
+                    throw new Error('Start-Koordinaten nicht gefunden.');
                 }
 
                 showResult('Hole Route...', 'loading');
-                const duration = await getRouteDuration(currentPos.lat, currentPos.lng, homeLat, homeLng);
+                const duration = await getRouteDuration(startLat, startLng, homeLat, homeLng);
 
                 showResult('Hole Wetter...', 'loading');
-                const weatherData = await getWeatherForecast(currentPos.lat, currentPos.lng);
+                const weatherData = await getWeatherForecast(startLat, startLng);
 
                 const result = calculateSafeDeparture(duration, weatherData);
                 showResult(result, 'success');
@@ -213,9 +239,10 @@
         }
 
         window.onload = () => {
-            document.getElementById('homeAddress').value = loadHomeAddress();
+            const addresses = loadAddresses();
+            document.getElementById('homeAddress').value = addresses.home;
+            document.getElementById('startAddress').value = addresses.start;
         };
     </script>
 </body>
 </html>
-*/
