@@ -16,7 +16,7 @@
     </style>
 </head>
 <body>
-    <h1>DryRid: Trocken nach Hause radeln</h1>
+    <h1>DryRie: Trocken nach Hause radeln</h1>
     
     <label for="homeAddress">Deine Hausadresse:</label>
     <input type="text" id="homeAddress" placeholder="z.B. Musterstraße 1, 10115 Berlin">
@@ -39,7 +39,7 @@
     
     <div id="result"></div>
 
-    <!-- Google Maps JS API laden -->
+    <!-- Google Maps JS API -->
     <script async
       src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCfmA_2wFMG2eXCJF0stxziBnM4CVNpoB0&libraries=places">
     </script>
@@ -47,7 +47,7 @@
     <script>
         function showResult(message, type) {
             const resultDiv = document.getElementById('result');
-            resultDiv.innerHTML = `<strong>${message}</strong>`;
+            resultDiv.innerHTML = message;
             resultDiv.className = type;
         }
 
@@ -68,10 +68,8 @@
                         const lng = location.lng();
                         localStorage.setItem(`${type}Lat`, lat);
                         localStorage.setItem(`${type}Lng`, lng);
-                        console.log(`${type}-Koordinaten: ${lat}, ${lng}`);
                         resolve({ lat, lng });
                     } else {
-                        console.error(`${type}-Geocoding fehlgeschlagen:`, status);
                         reject(new Error(`${type}-Geocoding fehlgeschlagen: ${status}`));
                     }
                 });
@@ -88,10 +86,8 @@
                 }, (result, status) => {
                     if (status === 'OK' && result.routes.length > 0) {
                         const duration = result.routes[0].legs[0].duration.value;
-                        console.log('Route-Dauer:', duration, 'Sekunden');
                         resolve(duration);
                     } else {
-                        console.error('Route fehlgeschlagen:', status);
                         reject(new Error(`Route fehlgeschlagen: ${status}`));
                     }
                 });
@@ -113,27 +109,23 @@
 
         async function saveHomeAddress() {
             const address = document.getElementById('homeAddress').value.trim();
-            if (address) {
-                localStorage.setItem('homeAddress', address);
-                showResult('Hausadresse gespeichert!', 'success');
-                try { await geocodeAddressJS(address, 'home'); } 
-                catch(err) { console.error('Home-Geocode fehlgeschlagen:', err); }
-            } else {
-                showResult('Bitte Hausadresse eingeben!', 'error');
-            }
+            if (!address) return showResult('Bitte Hausadresse eingeben!', 'error');
+            localStorage.setItem('homeAddress', address);
+            showResult('Hausadresse gespeichert!', 'success');
+            try { await geocodeAddressJS(address, 'home'); } 
+            catch (err) { console.error(err); }
         }
 
         async function saveStartAddress() {
             const address = document.getElementById('startAddress').value.trim();
-            if (address) {
-                localStorage.setItem('startAddress', address);
-                showResult('Von-Adresse gespeichert!', 'success');
-                try { await geocodeAddressJS(address, 'start'); }
-                catch(err) { console.error('Start-Geocode fehlgeschlagen:', err); }
-            } else {
+            if (!address) {
                 localStorage.removeItem('startAddress');
-                showResult('Von-Adresse gelöscht (optional).', 'success');
+                return showResult('Von-Adresse gelöscht (optional).', 'success');
             }
+            localStorage.setItem('startAddress', address);
+            showResult('Von-Adresse gespeichert!', 'success');
+            try { await geocodeAddressJS(address, 'start'); }
+            catch (err) { console.error(err); }
         }
 
         async function getWeatherForecast(lat, lng) {
@@ -155,7 +147,7 @@
 
             const intervalMinutes = (new Date(times[1]) - new Date(times[0])) / 60000;
             const stepsNeeded = Math.ceil(desiredMinutes / intervalMinutes);
-            const maxDryPrecip = 0.2;
+            const maxDryPrecip = 0.2; // Schwellenwert
 
             let startIndex = -1;
             for (let i = 0; i < precip.length - stepsNeeded; i++) {
@@ -166,27 +158,30 @@
                 }
             }
 
-            if (startIndex === -1) return `In den nächsten Stunden kein ${desiredMinutes}-Minuten-Fenster ohne Regen gefunden.`;
+            if (startIndex === -1)
+                return `☔️ In den nächsten Stunden kein ${desiredMinutes}-Minuten-Fenster ohne Regen gefunden.`;
 
             const startDryTime = new Date(times[startIndex]);
+            const endDryTime = new Date(startDryTime.getTime() + desiredMinutes * 60000);
             const departureTime = new Date(startDryTime.getTime() - (durationSeconds + 300) * 1000);
             const durationMin = Math.floor(durationSeconds / 60);
 
             if (departureTime < now)
-                return `🌦 Trockenes Fenster ab ${startDryTime.toLocaleTimeString('de-DE')} — aber du müsstest schon los sein.`;
+                return `🌦 Trockenes Fenster ab ${startDryTime.toLocaleTimeString('de-DE')} bis ${endDryTime.toLocaleTimeString('de-DE')} — aber du müsstest schon los sein.`;
 
-            return `🌤 Nächstes trockenes ${desiredMinutes}-Minuten-Fenster: ab ${startDryTime.toLocaleTimeString('de-DE')}.
-🚲 Empfohlene Abfahrt: ${departureTime.toLocaleTimeString('de-DE')} (Fahrtzeit: ${durationMin} Minuten)`;
+            return `
+                🌤 <strong>Nächstes trockenes ${desiredMinutes}-Minuten-Fenster:</strong><br>
+                ${startDryTime.toLocaleTimeString('de-DE')} – ${endDryTime.toLocaleTimeString('de-DE')}<br><br>
+                🚲 <strong>Empfohlene Abfahrt:</strong> ${departureTime.toLocaleTimeString('de-DE')}
+                <br>(Fahrtzeit: ${durationMin} Minuten)
+            `;
         }
 
         async function calculateSafeRide() {
-            const resultDiv = document.getElementById('result');
-            resultDiv.innerHTML = 'Lade Daten...';
-            resultDiv.className = 'loading';
+            showResult('⏳ Lade Daten...', 'loading');
             try {
                 const addresses = loadAddresses();
                 if (!addresses.home) throw new Error('Hausadresse nicht gespeichert!');
-
                 const desiredMinutes = parseInt(document.getElementById('dryWindow').value);
 
                 // Home
@@ -211,26 +206,28 @@
                     startLat = pos.lat; startLng = pos.lng;
                 }
 
-                showResult('Hole Route...', 'loading');
+                showResult('📍 Hole Route...', 'loading');
                 const duration = await getRouteDurationJS(startLat, startLng, homeLat, homeLng);
 
-                showResult('Hole Wetter...', 'loading');
+                showResult('🌦 Hole Wetterdaten...', 'loading');
                 const weatherData = await getWeatherForecast(homeLat, homeLng);
 
                 const result = calculateSafeDeparture(duration, weatherData, desiredMinutes);
                 showResult(result, 'success');
 
             } catch (error) {
-                showResult(`Fehler: ${error.message}`, 'error');
-                console.error('Gesamter Fehler:', error);
+                showResult(`❌ Fehler: ${error.message}`, 'error');
+                console.error(error);
             }
         }
 
-        window.onload = () => {
+        // Optional: automatische Neuberechnung bei Änderung der Fensterauswahl
+        document.addEventListener('DOMContentLoaded', () => {
             const addresses = loadAddresses();
             document.getElementById('homeAddress').value = addresses.home;
             document.getElementById('startAddress').value = addresses.start;
-        };
+            document.getElementById('dryWindow').addEventListener('change', calculateSafeRide);
+        });
     </script>
 </body>
 </html>
