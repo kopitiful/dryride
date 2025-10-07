@@ -16,7 +16,7 @@
     </style>
 </head>
 <body>
-    <h1>DryRie: Trocken nach Hause radeln</h1>
+    <h1>DryRide: Trocken nach Hause radeln</h1>
     
     <label for="homeAddress">Deine Hausadresse:</label>
     <input type="text" id="homeAddress" placeholder="z.B. Musterstraße 1, 10115 Berlin">
@@ -129,13 +129,14 @@
         }
 
         async function getWeatherForecast(lat, lng) {
-            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&minutely_15=precipitation&timezone=Europe/Berlin&forecast_days=1`;
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&minutely_15=precipitation_probability,precipitation&timezone=Europe/Berlin&forecast_days=1`;
             const response = await fetch(url);
             if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             const data = await response.json();
             return {
                 time: data.minutely_15.time,
-                precipitation: data.minutely_15.precipitation
+                precipitation: data.minutely_15.precipitation,
+                probability: data.minutely_15.precipitation_probability
             };
         }
 
@@ -147,7 +148,7 @@
 
             const intervalMinutes = (new Date(times[1]) - new Date(times[0])) / 60000;
             const stepsNeeded = Math.ceil(desiredMinutes / intervalMinutes);
-            const maxDryPrecip = 0.2; // Schwellenwert
+            const maxDryPrecip = 0.2;
 
             let startIndex = -1;
             for (let i = 0; i < precip.length - stepsNeeded; i++) {
@@ -184,7 +185,6 @@
                 if (!addresses.home) throw new Error('Hausadresse nicht gespeichert!');
                 const desiredMinutes = parseInt(document.getElementById('dryWindow').value);
 
-                // Home
                 let homeLat = parseFloat(localStorage.getItem('homeLat'));
                 let homeLng = parseFloat(localStorage.getItem('homeLng'));
                 if (isNaN(homeLat) || isNaN(homeLng)) {
@@ -192,7 +192,6 @@
                     homeLat = home.lat; homeLng = home.lng;
                 }
 
-                // Start
                 let startLat, startLng;
                 if (addresses.start) {
                     startLat = parseFloat(localStorage.getItem('startLat'));
@@ -221,7 +220,6 @@
             }
         }
 
-        // Optional: automatische Neuberechnung bei Änderung der Fensterauswahl
         document.addEventListener('DOMContentLoaded', () => {
             const addresses = loadAddresses();
             document.getElementById('homeAddress').value = addresses.home;
