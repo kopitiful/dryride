@@ -27,7 +27,6 @@
 
     <script>
         const GOOGLE_API_KEY = 'AIzaSyCfmA_2wFMG2eXCJF0stxziBnM4CVNpoB0';
-        const OWM_API_KEY = '3125272e79370269f400bc33a8449665';  // Ersetze!
         const CORS_PROXY = 'https://cors-anywhere.herokuapp.com/';
 
         function loadHomeAddress() {
@@ -48,13 +47,11 @@
         async function geocodeAddress(address) {
             const baseUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${GOOGLE_API_KEY}`;
             const url = CORS_PROXY + baseUrl;
-            console.log('Geocoding-URL (vollständig):', url);  // Debug: Check URL
+            console.log('Geocoding-URL:', url);
             try {
                 const response = await fetch(url);
-                console.log('Geocoding-Response Status:', response.status);
                 if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 const data = await response.json();
-                console.log('Geocoding-Data Status:', data.status);
                 if (data.status === 'OK' && data.results.length > 0) {
                     const lat = data.results[0].geometry.location.lat;
                     const lng = data.results[0].geometry.location.lng;
@@ -67,7 +64,7 @@
                 }
             } catch (error) {
                 console.error('Geocoding-Fehler:', error);
-                showResult(`Geocoding-Fehler: ${error.message}. Proxy-Access prüfen.`, 'error');
+                showResult(`Geocoding-Fehler: ${error.message}.`, 'error');
             }
         }
 
@@ -87,13 +84,11 @@
         async function getRouteDuration(startLat, startLng, endLat, endLng) {
             const baseUrl = `https://maps.googleapis.com/maps/api/directions/json?origin=${startLat},${startLng}&destination=${endLat},${endLng}&mode=bicycling&key=${GOOGLE_API_KEY}`;
             const url = CORS_PROXY + baseUrl;
-            console.log('Route-URL (vollständig):', url);  // Debug: Check URL
+            console.log('Route-URL:', url);
             try {
                 const response = await fetch(url);
-                console.log('Route-Response Status:', response.status);
                 if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 const data = await response.json();
-                console.log('Route-Data Status:', data.status);
                 if (data.status === 'OK' && data.routes.length > 0) {
                     const duration = data.routes[0].legs[0].duration.value;
                     console.log('Route-Dauer:', duration, 'Sekunden');
@@ -107,30 +102,42 @@
             }
         }
 
+        // Neue Wetter-API: Open-Meteo (key-frei, stündlich)
         async function getWeatherForecast(lat, lng) {
-            const url = `https://api.openweathermap.org/data/2.5/onecall?lat=${lat}&lon=${lng}&appid=$3125272e79370269f400bc33a8449665
-&exclude=current,minutely,daily,alerts&units=metric`;
-            console.log('Wetter-URL:', url);  // Debug
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=precipitation&timezone=Europe/Berlin&forecast_days=1`;
+            console.log('Wetter-URL (Open-Meteo):', url);
             try {
                 const response = await fetch(url);
-                console.log('Wetter-Response Status:', response.status);
                 if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 const data = await response.json();
-                if (data.cod !== '200') throw new Error(`Wetter-Fehler: ${data.message}`);
-                console.log('Wetter-Daten geladen:', data.hourly ? data.hourly.length : 0, 'Stunden');
-                return data.hourly || [];
+                console.log('Wetter-Daten geladen:', data.hourly ? data.hourly.time.length : 0, 'Stunden');
+                return data.hourly ? { time: data.hourly.time, precipitation: data.hourly.precipitation } : [];
             } catch (error) {
                 console.error('Wetter-Fehler:', error);
                 throw error;
             }
         }
 
-        function calculateSafeDeparture(durationSeconds, hourly) {
-            const now = Math.floor(Date.now() / 1000);
+        function calculateSafeDeparture(durationSeconds, weatherData) {
+            const now = new Date();
+            const nowHour = now.getHours();
             const rainTimes = [];
-            for (let hour of hourly.slice(0, 12)) {
-                if (hour.rain && hour.rain['1h'] > 0) {
-                    rainTimes.push(hour.dt);
+
+            if (!weatherData.time || !weatherData.precipitation) {
+                return 'Wetterdaten unvollständig. Probiere später.';
+            }
+
+            // Finde Regen in nächsten 12 Stunden (Regen > 0.1 mm/h)
+            for (let i = 0; i < 12; i++) {
+                const hourTime = new Date(weatherData.time[i]);
+                const hourIndex = nowHour + i;
+                if (hourIndex < 24) {
+                    if (weatherData.precipitation[i] > 0.1) {
+                        rainTimes.push(hourTime.getTime() / 1000);  // Timestamp
+                    }
+                } else {
+                    // Über Mitternacht – vereinfacht
+                    break;
                 }
             }
 
@@ -140,15 +147,11 @@
                 return 'Kein Regen erwartet. Du kannst jederzeit losfahren!';
             }
 
-            const nextRain = rainTimes.find(rt => rt > now);
-            if (!nextRain) {
-                return 'Regen vorbei. Losfahren!';
-            }
+            const nextRain = rainTimes[0];  // Nächste Regen-Stunde
+            const departureTime = nextRain - durationSeconds * 1000 - 300000;  // 5 Min Puffer in ms
+            const depDate = new Date(departureTime);
 
-            const departureTime = nextRain - durationSeconds - 300;
-            const depDate = new Date(departureTime * 1000);
-
-            if (departureTime > now) {
+            if (departureTime > now.getTime()) {
                 return `Fahre um ${depDate.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} los, um trocken anzukommen. Fahrtzeit: ${Math.floor(durationSeconds / 60)} Min.`;
             } else {
                 return 'Es regnet bald oder schon. Warte oder nimm Alternativen!';
@@ -192,9 +195,9 @@
                 const duration = await getRouteDuration(currentPos.lat, currentPos.lng, homeLat, homeLng);
 
                 showResult('Hole Wetter...', 'loading');
-                const hourly = await getWeatherForecast(currentPos.lat, currentPos.lng);
+                const weatherData = await getWeatherForecast(currentPos.lat, currentPos.lng);
 
-                const result = calculateSafeDeparture(duration, hourly);
+                const result = calculateSafeDeparture(duration, weatherData);
                 showResult(result, 'success');
 
             } catch (error) {
