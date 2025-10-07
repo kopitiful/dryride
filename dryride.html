@@ -109,7 +109,8 @@
         }
 
         async function getWeatherForecast(lat, lng) {
-            const url = `https://api.openweathermap.org/data/2.5/onecall?lat=${lat}&lon=${lng}&appid=${OWM_API_KEY}&exclude=current,minutely,daily,alerts&units=metric`;
+            const url = `https://api.openweathermap.org/data/2.5/onecall?lat=${lat}&lon=${lng}&appid=$3125272e79370269f400bc33a8449665
+&exclude=current,minutely,daily,alerts&units=metric`;
             console.log('Wetter-URL:', url);  // Debug
             try {
                 const response = await fetch(url);
