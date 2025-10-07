@@ -138,28 +138,49 @@
             };
         }
 
-        function calculateSafeDeparture(durationSeconds, weatherData) {
-            const now = new Date();
-            const rainTimes = [];
-            const currentPrecip = weatherData.current.precipitation || 0;
-            const hourly = weatherData.hourly;
+       function calculateSafeDeparture(durationSeconds, weatherData) {
+    const now = new Date();
+    const hourly = weatherData.hourly;
+    if (!hourly.time || !hourly.precipitation) {
+        return 'Wetterdaten unvollständig. Probiere später.';
+    }
 
-            if (currentPrecip > 0.1) {
-                for (let i = 0; i < hourly.time.length; i++) {
-                    const hourTime = new Date(hourly.time[i]);
-                    if (hourTime > now && hourly.precipitation[i] <= 0.1) {
-                        rainTimes.push(hourTime.getTime() / 1000);
-                    }
-                }
-                if (rainTimes.length === 0) return 'Es regnet jetzt und hält an. Warte oder nimm Alternativen!';
-                const nextDry = rainTimes[0];
-                const depDate = new Date(nextDry*1000 - durationSeconds*1000 - 300000);
-                return `Es regnet derzeit. Warte bis ${depDate.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})}, dann losfahren.`;
+    const intervalMinutes = (new Date(hourly.time[1]) - new Date(hourly.time[0])) / 60000; // meist 60
+    const requiredDryPoints = Math.ceil(30 / intervalMinutes); // wie viele trockene Zeitpunkte für 30 Min
+
+    // Finde erstes Zeitfenster mit >= 30 Min trocken
+    let startDryIndex = -1;
+    for (let i = 0; i < hourly.precipitation.length - requiredDryPoints; i++) {
+        let dry = true;
+        for (let j = 0; j < requiredDryPoints; j++) {
+            if (hourly.precipitation[i + j] > 0.1) {
+                dry = false;
+                break;
             }
-
-            // Kein Regen erwartet
-            return 'Kein Regen erwartet. Du kannst jederzeit losfahren!';
         }
+        if (dry && new Date(hourly.time[i]) > now) {
+            startDryIndex = i;
+            break;
+        }
+    }
+
+    if (startDryIndex === -1) {
+        return 'In den nächsten Stunden kein 30-Minuten-Fenster ohne Regen gefunden.';
+    }
+
+    const startDryTime = new Date(hourly.time[startDryIndex]);
+    const departureTime = startDryTime.getTime() / 1000 - durationSeconds - 300; // 5 Min Puffer
+    const depDate = new Date(departureTime * 1000);
+
+    if (depDate < now) {
+        return 'Ein trockenes Fenster wurde gefunden, aber du müsstest schon unterwegs sein.';
+    }
+
+    const durationMin = Math.floor(durationSeconds / 60);
+    return `Nächstes trockenes 30-Minuten-Fenster: ab ${startDryTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}.
+Fahre um ${depDate.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} los, um trocken anzukommen (Fahrtzeit ${durationMin} Min).`;
+}
+
 
         async function calculateSafeRide() {
             const resultDiv = document.getElementById('result');
