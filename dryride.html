@@ -131,7 +131,7 @@
 
         async function getWeatherForecast(lat, lng) {
             // Hole 1-Minuten-Vorhersage
-            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&minutely_1=precipitation&timezone=Europe/Berlin&forecast_days=1`;
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&minutely=precipitation&timezone=Europe/Berlin&forecast_days=1`;
             const response = await fetch(url);
             if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             const data = await response.json();
