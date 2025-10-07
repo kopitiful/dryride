@@ -128,13 +128,13 @@
         }
 
         async function getWeatherForecast(lat, lng) {
-            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&hourly=precipitation&timezone=Europe/Berlin&forecast_days=1`;
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&minutely_15=precipitation&timezone=Europe/Berlin&forecast_days=1`;
             const response = await fetch(url);
             if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             const data = await response.json();
             return {
                 current: data.current_weather || { precipitation: 0 },
-                hourly: data.hourly ? { time: data.hourly.time, precipitation: data.hourly.precipitation } : { time: [], precipitation: [] }
+                hourly: data.minutely_15 ? { time: data.minutely_15.time, precipitation: data.minutely_15.precipitation } : { time: [], precipitation: [] }
             };
         }
 
@@ -145,15 +145,18 @@
         return 'Wetterdaten unvollständig. Probiere später.';
     }
 
-    const intervalMinutes = (new Date(hourly.time[1]) - new Date(hourly.time[0])) / 60000; // meist 60
-    const requiredDryPoints = Math.ceil(30 / intervalMinutes); // wie viele trockene Zeitpunkte für 30 Min
+    // Intervallgröße berechnen (meist 15 Minuten)
+    const intervalMinutes = (new Date(hourly.time[1]) - new Date(hourly.time[0])) / 60000;
+    const requiredDryPoints = Math.ceil(30 / intervalMinutes);
 
-    // Finde erstes Zeitfenster mit >= 30 Min trocken
+    // Leichte Nieselwerte bis 0.2 mm/h ignorieren
+    const maxDryPrecip = 0.2;
+
     let startDryIndex = -1;
     for (let i = 0; i < hourly.precipitation.length - requiredDryPoints; i++) {
         let dry = true;
         for (let j = 0; j < requiredDryPoints; j++) {
-            if (hourly.precipitation[i + j] > 0.1) {
+            if (hourly.precipitation[i + j] > maxDryPrecip) {
                 dry = false;
                 break;
             }
@@ -177,9 +180,8 @@
     }
 
     const durationMin = Math.floor(durationSeconds / 60);
-    return `Nächstes trockenes 30-Minuten-Fenster: ab ${startDryTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}.
-Fahre um ${depDate.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} los, um trocken anzukommen (Fahrtzeit ${durationMin} Min).`;
-}
+    return `🌤 Nächstes trockenes 30-Minuten-Fenster: ab ${startDryTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}.
+🚲 Fahre um ${depDate.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} los (Fahrtzeit ${durationMin}
 
 
         async function calculateSafeRide() {
