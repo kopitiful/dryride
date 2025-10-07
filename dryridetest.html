@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DryRide Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #f4f4f4; }
+        input, button { padding: 10px; margin: 5px; width: 100%; box-sizing: border-box; }
+        button { background: #4CAF50; color: white; border: none; cursor: pointer; }
+        button:hover { background: #45a049; }
+        #result { margin-top: 20px; padding: 15px; background: white; border-radius: 5px; border-left: 4px solid #4CAF50; }
+        .error { border-left-color: #f44336; color: #f44336; }
+    </style>
+</head>
+<body>
+    <h1>DryRide: Trocken nach Hause radeln (Test-Version)</h1>
+    
+    <p>Dies ist ein Test. Du solltest alles sehen: Überschrift, Eingabefeld, Buttons und Ergebnis-Bereich.</p>
+    
+    <label for="homeAddress">Deine Hausadresse:</label>
+    <input type="text" id="homeAddress" placeholder="z.B. Musterstraße 1, 10115 Berlin" value="Geladene Adresse (Test)">
+    <button onclick="saveHomeAddress()">Adresse speichern</button>
+    
+    <button onclick="calculateSafeRide()" style="margin-top: 20px;">Berechnen: Wann losfahren? (Fake-Ergebnis)</button>
+    
+    <div id="result">Hier erscheint das Ergebnis...</div>
+
+    <script>
+        function saveHomeAddress() {
+            const address = document.getElementById('homeAddress').value.trim();
+            if (address) {
+                alert('Adresse gespeichert: ' + address);  // Simuliert Speicherung
+                document.getElementById('result').innerHTML = '<strong>Adresse gespeichert! (Test)</strong>';
+                document.getElementById('result').className = '';
+            } else {
+                alert('Bitte Adresse eingeben!');
+            }
+        }
+
+        function calculateSafeRide() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<strong>Fake-Ergebnis: Fahre um 14:30 los, um trocken anzukommen. Fahrtzeit: 25 Min. (Test – APIs fehlen)</strong>';
+            resultDiv.className = '';
+        }
+
+        // Lade "gespeicherte" Adresse beim Start
+        window.onload = () => {
+            document.getElementById('homeAddress').value = 'Beispiel: Berliner Straße 123';
+        };
+    </script>
+</body>
+</html>
