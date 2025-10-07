@@ -121,15 +121,19 @@
             }
         }
 
+        // Wetter mit current_weather + hourly precipitation
         async function getWeatherForecast(lat, lng) {
-            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=precipitation&timezone=Europe/Berlin&forecast_days=1`;
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&hourly=precipitation&timezone=Europe/Berlin&forecast_days=1`;
             console.log('Wetter-URL (Open-Meteo):', url);
             try {
                 const response = await fetch(url);
                 if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 const data = await response.json();
                 console.log('Wetter-Daten geladen:', data.hourly ? data.hourly.time.length : 0, 'Stunden');
-                return data.hourly ? { time: data.hourly.time, precipitation: data.hourly.precipitation } : [];
+                return {
+                    current: data.current_weather || { precipitation: 0 },
+                    hourly: data.hourly ? { time: data.hourly.time, precipitation: data.hourly.precipitation } : { time: [], precipitation: [] }
+                };
             } catch (error) {
                 console.error('Wetter-Fehler:', error);
                 throw error;
@@ -139,16 +143,42 @@
         function calculateSafeDeparture(durationSeconds, weatherData) {
             const now = new Date();
             const rainTimes = [];
+            const currentPrecip = weatherData.current.precipitation || 0;
+            const hourly = weatherData.hourly;
 
-            if (!weatherData.time || !weatherData.precipitation) {
+            console.log('Aktueller Niederschlag:', currentPrecip, 'mm/h');
+
+            if (!hourly.time || !hourly.precipitation) {
                 return 'Wetterdaten unvollständig. Probiere später.';
             }
 
-            // Finde Regen in nächsten 12 Stunden (Regen > 0.1 mm/h)
-            for (let i = 0; i < weatherData.time.length; i++) {
-                const hourTime = new Date(weatherData.time[i]);
-                if (hourTime > now && rainTimes.length < 12) {  // Nächste Stunden
-                    if (weatherData.precipitation[i] > 0.1) {
+            // Wenn jetzt regnet: Nächste trockene Stunde finden
+            if (currentPrecip > 0.1) {
+                console.log('Regnet derzeit – suche nächste trockene Stunde.');
+                for (let i = 0; i < hourly.time.length; i++) {
+                    const hourTime = new Date(hourly.time[i]);
+                    if (hourTime > now && hourly.precipitation[i] <= 0.1 && rainTimes.length < 12) {
+                        rainTimes.push(hourTime.getTime() / 1000);
+                    }
+                }
+                if (rainTimes.length === 0) {
+                    return 'Es regnet jetzt und hält an. Warte oder nimm Alternativen!';
+                }
+                const nextDry = rainTimes[0];
+                const departureTime = nextDry - durationSeconds * 1000 - 300000;  // Minus Fahrtzeit + Puffer
+                const depDate = new Date(departureTime);
+                if (departureTime > now.getTime()) {
+                    return `Es regnet derzeit. Warte bis ${depDate.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}, dann losfahren. Fahrtzeit: ${Math.floor(durationSeconds / 60)} Min.`;
+                } else {
+                    return 'Es regnet jetzt und die nächste Lücke ist vorbei. Warte oder nimm Alternativen!';
+                }
+            }
+
+            // Sonst: Bestehende Logik (nächster Regen)
+            for (let i = 0; i < hourly.time.length; i++) {
+                const hourTime = new Date(hourly.time[i]);
+                if (hourTime > now && rainTimes.length < 12) {
+                    if (hourly.precipitation[i] > 0.1) {
                         rainTimes.push(hourTime.getTime() / 1000);
                     }
                 }
@@ -161,7 +191,7 @@
             }
 
             const nextRain = rainTimes[0];
-            const departureTime = nextRain - durationSeconds * 1000 - 300000;  // 5 Min Puffer in ms
+            const departureTime = nextRain - durationSeconds * 1000 - 300000;
             const depDate = new Date(departureTime);
 
             if (departureTime > now.getTime()) {
@@ -208,8 +238,9 @@
                     }
                     console.log('Start: Von-Adresse genutzt:', startAddress);
                 } else {
-                    startLat = (await getCurrentLocation()).lat;
-                    startLng = (await getCurrentLocation()).lng;
+                    const pos = await getCurrentLocation();
+                    startLat = pos.lat;
+                    startLng = pos.lng;
                     console.log('Start: GPS genutzt');
                 }
 
