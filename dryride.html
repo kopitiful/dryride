@@ -136,8 +136,8 @@
             if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             const data = await response.json();
             return {
-                time: data.minutely_1.time,
-                precipitation: data.minutely_1.precipitation
+                time: data.minutely.time,
+                precipitation: data.minutely.precipitation
             };
         }
 
