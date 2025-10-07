@@ -28,7 +28,7 @@
     <script>
         const GOOGLE_API_KEY = 'AIzaSyCfmA_2wFMG2eXCJF0stxziBnM4CVNpoB0';
         const OWM_API_KEY = 'YOUR_OWM_API_KEY';  // Ersetze!
-        const CORS_PROXY = 'https://cors-anywhere.herokuapp.com/AIzaSyCfmA_2wFMG2eXCJF0stxziBnM4CVNpoB0';  // Temporärer Proxy
+        const CORS_PROXY = 'https://cors-anywhere.herokuapp.com/';
 
         function loadHomeAddress() {
             return localStorage.getItem('homeAddress') || '';
@@ -46,12 +46,15 @@
         }
 
         async function geocodeAddress(address) {
-            console.log('Geocoding-Request für:', address);
-            const url = `${CORS_PROXY}https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${GOOGLE_API_KEY}`;
+            const baseUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${GOOGLE_API_KEY}`;
+            const url = CORS_PROXY + baseUrl;
+            console.log('Geocoding-URL (vollständig):', url);  // Debug: Check URL
             try {
                 const response = await fetch(url);
+                console.log('Geocoding-Response Status:', response.status);
                 if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 const data = await response.json();
+                console.log('Geocoding-Data Status:', data.status);
                 if (data.status === 'OK' && data.results.length > 0) {
                     const lat = data.results[0].geometry.location.lat;
                     const lng = data.results[0].geometry.location.lng;
@@ -64,7 +67,7 @@
                 }
             } catch (error) {
                 console.error('Geocoding-Fehler:', error);
-                showResult(`Geocoding-Fehler: ${error.message}.`, 'error');
+                showResult(`Geocoding-Fehler: ${error.message}. Proxy-Access prüfen.`, 'error');
             }
         }
 
@@ -82,8 +85,9 @@
         }
 
         async function getRouteDuration(startLat, startLng, endLat, endLng) {
-            console.log('Route-Request: Von', startLat, startLng, 'nach', endLat, endLng);
-            const url = `${CORS_PROXY}https://maps.googleapis.com/maps/api/directions/json?origin=${startLat},${startLng}&destination=${endLat},${endLng}&mode=bicycling&key=${GOOGLE_API_KEY}`;
+            const baseUrl = `https://maps.googleapis.com/maps/api/directions/json?origin=${startLat},${startLng}&destination=${endLat},${endLng}&mode=bicycling&key=${GOOGLE_API_KEY}`;
+            const url = CORS_PROXY + baseUrl;
+            console.log('Route-URL (vollständig):', url);  // Debug: Check URL
             try {
                 const response = await fetch(url);
                 console.log('Route-Response Status:', response.status);
@@ -91,7 +95,9 @@
                 const data = await response.json();
                 console.log('Route-Data Status:', data.status);
                 if (data.status === 'OK' && data.routes.length > 0) {
-                    return data.routes[0].legs[0].duration.value;
+                    const duration = data.routes[0].legs[0].duration.value;
+                    console.log('Route-Dauer:', duration, 'Sekunden');
+                    return duration;
                 } else {
                     throw new Error(`Routen-Fehler: ${data.status}`);
                 }
@@ -102,8 +108,8 @@
         }
 
         async function getWeatherForecast(lat, lng) {
-            console.log('Wetter-Request für:', lat, lng);
             const url = `https://api.openweathermap.org/data/2.5/onecall?lat=${lat}&lon=${lng}&appid=${OWM_API_KEY}&exclude=current,minutely,daily,alerts&units=metric`;
+            console.log('Wetter-URL:', url);  // Debug
             try {
                 const response = await fetch(url);
                 console.log('Wetter-Response Status:', response.status);
