@@ -6,7 +6,7 @@
     <title>DryRide – Regen-Warnung für Radfahrer</title>
     <style>
         body { font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #f4f4f4; }
-        input, button { padding: 10px; margin: 5px; width: 100%; box-sizing: border-box; }
+        input, button, select { padding: 10px; margin: 5px; width: 100%; box-sizing: border-box; }
         button { background: #4CAF50; color: white; border: none; cursor: pointer; }
         button:hover { background: #45a049; }
         #result { margin-top: 20px; padding: 15px; background: white; border-radius: 5px; border-left: 4px solid #4CAF50; }
@@ -16,7 +16,7 @@
     </style>
 </head>
 <body>
-    <h1>Dryide: Trocken nach Hause radeln</h1>
+    <h1>DryRide: Trocken nach Hause radeln</h1>
     
     <label for="homeAddress">Deine Hausadresse:</label>
     <input type="text" id="homeAddress" placeholder="z.B. Musterstraße 1, 10115 Berlin">
@@ -25,6 +25,15 @@
     <label for="startAddress" class="optional">Von-Adresse (optional, z.B. Arbeit):</label>
     <input type="text" id="startAddress" placeholder="z.B. Bahnhofstraße 5, Den Haag">
     <button onclick="saveStartAddress()">Von-Adresse speichern</button>
+
+    <label for="dryWindow">Gewünschtes regenfreies Zeitfenster:</label>
+    <select id="dryWindow">
+        <option value="15">15 Minuten</option>
+        <option value="30" selected>30 Minuten</option>
+        <option value="45">45 Minuten</option>
+        <option value="60">60 Minuten</option>
+        <option value="90">90 Minuten</option>
+    </select>
     
     <button onclick="calculateSafeRide()" style="margin-top: 20px;">Berechnen: Wann losfahren?</button>
     
@@ -128,61 +137,47 @@
         }
 
         async function getWeatherForecast(lat, lng) {
-            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&minutely_15=precipitation&timezone=Europe/Berlin&forecast_days=1`;
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&minutely_15=precipitation&timezone=Europe/Berlin&forecast_days=1`;
             const response = await fetch(url);
             if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             const data = await response.json();
             return {
-                current: data.current_weather || { precipitation: 0 },
-                hourly: data.minutely_15 ? { time: data.minutely_15.time, precipitation: data.minutely_15.precipitation } : { time: [], precipitation: [] }
+                time: data.minutely_15.time,
+                precipitation: data.minutely_15.precipitation
             };
         }
 
-       function calculateSafeDeparture(durationSeconds, weatherData) {
-    const now = new Date();
-    const hourly = weatherData.hourly;
-    if (!hourly.time || !hourly.precipitation) {
-        return 'Wetterdaten unvollständig. Probiere später.';
-    }
+        function calculateSafeDeparture(durationSeconds, weatherData, desiredMinutes) {
+            const now = new Date();
+            const times = weatherData.time;
+            const precip = weatherData.precipitation;
+            if (!times || !precip) return 'Wetterdaten unvollständig.';
 
-    // Intervallgröße berechnen (meist 15 Minuten)
-    const intervalMinutes = (new Date(hourly.time[1]) - new Date(hourly.time[0])) / 60000;
-    const requiredDryPoints = Math.ceil(30 / intervalMinutes);
+            const intervalMinutes = (new Date(times[1]) - new Date(times[0])) / 60000;
+            const stepsNeeded = Math.ceil(desiredMinutes / intervalMinutes);
+            const maxDryPrecip = 0.2;
 
-    // Leichte Nieselwerte bis 0.2 mm/h ignorieren
-    const maxDryPrecip = 0.2;
-
-    let startDryIndex = -1;
-    for (let i = 0; i < hourly.precipitation.length - requiredDryPoints; i++) {
-        let dry = true;
-        for (let j = 0; j < requiredDryPoints; j++) {
-            if (hourly.precipitation[i + j] > maxDryPrecip) {
-                dry = false;
-                break;
+            let startIndex = -1;
+            for (let i = 0; i < precip.length - stepsNeeded; i++) {
+                const windowDry = precip.slice(i, i + stepsNeeded).every(p => p <= maxDryPrecip);
+                if (windowDry && new Date(times[i]) > now) {
+                    startIndex = i;
+                    break;
+                }
             }
+
+            if (startIndex === -1) return `In den nächsten Stunden kein ${desiredMinutes}-Minuten-Fenster ohne Regen gefunden.`;
+
+            const startDryTime = new Date(times[startIndex]);
+            const departureTime = new Date(startDryTime.getTime() - (durationSeconds + 300) * 1000);
+            const durationMin = Math.floor(durationSeconds / 60);
+
+            if (departureTime < now)
+                return `🌦 Trockenes Fenster ab ${startDryTime.toLocaleTimeString('de-DE')} — aber du müsstest schon los sein.`;
+
+            return `🌤 Nächstes trockenes ${desiredMinutes}-Minuten-Fenster: ab ${startDryTime.toLocaleTimeString('de-DE')}.
+🚲 Empfohlene Abfahrt: ${departureTime.toLocaleTimeString('de-DE')} (Fahrtzeit: ${durationMin} Minuten)`;
         }
-        if (dry && new Date(hourly.time[i]) > now) {
-            startDryIndex = i;
-            break;
-        }
-    }
-
-    if (startDryIndex === -1) {
-        return 'In den nächsten Stunden kein 30-Minuten-Fenster ohne Regen gefunden.';
-    }
-
-    const startDryTime = new Date(hourly.time[startDryIndex]);
-    const departureTime = startDryTime.getTime() / 1000 - durationSeconds - 300; // 5 Min Puffer
-    const depDate = new Date(departureTime * 1000);
-
-    if (depDate < now) {
-        return 'Ein trockenes Fenster wurde gefunden, aber du müsstest schon unterwegs sein.';
-    }
-
-    const durationMin = Math.floor(durationSeconds / 60);
-    return `🌤 Nächstes trockenes 30-Minuten-Fenster: ab ${startDryTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}.
-🚲 Fahre um ${depDate.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} los (Fahrtzeit ${durationMin}
-
 
         async function calculateSafeRide() {
             const resultDiv = document.getElementById('result');
@@ -191,6 +186,8 @@
             try {
                 const addresses = loadAddresses();
                 if (!addresses.home) throw new Error('Hausadresse nicht gespeichert!');
+
+                const desiredMinutes = parseInt(document.getElementById('dryWindow').value);
 
                 // Home
                 let homeLat = parseFloat(localStorage.getItem('homeLat'));
@@ -220,7 +217,7 @@
                 showResult('Hole Wetter...', 'loading');
                 const weatherData = await getWeatherForecast(homeLat, homeLng);
 
-                const result = calculateSafeDeparture(duration, weatherData);
+                const result = calculateSafeDeparture(duration, weatherData, desiredMinutes);
                 showResult(result, 'success');
 
             } catch (error) {
