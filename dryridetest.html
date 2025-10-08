@@ -316,24 +316,45 @@
   function avg(arr){ if (!arr || !arr.length) return 0; return arr.reduce((a,b)=>a+b,0)/arr.length; }
 
   // calculate safe departure (UI-logic)
-  function calculateSafeDeparture(durationSeconds, weatherData, desiredMinutes, maxPrecip){
+  function calculateSafeDeparture(durationSeconds, weatherData, desiredMinutes, maxPrecip) {
     const now = new Date();
     const times = weatherData.time;
     const precip = weatherData.precipitation;
-    const step = weatherData.stepMinutes || 1;
-    const stepsNeeded = Math.ceil(desiredMinutes / step);
+    if (!times || !precip) throw new Error("Wetterdaten unvollständig.");
 
-    for (let i=0;i<=precip.length-stepsNeeded;i++){
-      const window = precip.slice(i, i+stepsNeeded);
-      const mean = avg(window);
-      const startTime = new Date(times[i]);
-      if (mean <= maxPrecip && startTime > now){
-        const departureTime = new Date(startTime.getTime() - (durationSeconds + 300)*1000);
-        return { startTime, departureTime, mean };
-      }
+    const intervalMinutes = (new Date(times[1]) - new Date(times[0])) / 60000;
+    const stepsNeeded = Math.ceil(desiredMinutes / intervalMinutes);
+
+    let startIndex = -1;
+    for (let i = 0; i < precip.length - stepsNeeded; i++) {
+        const windowValues = precip.slice(i, i + stepsNeeded);
+        const windowMax = Math.max(...windowValues); // maximaler Niederschlag im Fenster
+
+        if (windowMax <= maxPrecip && new Date(times[i]) > now) {
+            startIndex = i;
+            break;
+        }
     }
-    return null;
-  }
+
+    if (startIndex === -1)
+        return { message: `☔️ In den nächsten Stunden kein ${desiredMinutes}-Minuten-Fenster gefunden, das deinen Vorgaben entspricht.`, departureTime: null };
+
+    const startDryTime = new Date(times[startIndex]);
+    const departureTime = new Date(startDryTime.getTime() - (durationSeconds + 300) * 1000);
+    const durationMin = Math.floor(durationSeconds / 60);
+
+    let waitMinutes = Math.round((departureTime - now) / 60000);
+    if (waitMinutes < 0) waitMinutes = 0;
+
+    let driveText = waitMinutes <= 5 ? 
+        "🚲 Du kannst jetzt losfahren und kommst trocken an!" :
+        `🚲 Du kannst in ${waitMinutes} Minuten losfahren und kommst trocken an.`;
+
+    return {
+        message: `🌤 Nächstes geeignetes ${desiredMinutes}-Minuten-Fenster ab ${startDryTime.toLocaleTimeString('de-DE')}<br>${driveText}<br>(Fahrtzeit: ${durationMin} Minuten)`,
+        departureTime: departureTime
+    };
+}
 
   // get route duration using Google Directions
   function getRouteDuration(startLat, startLng, endLat, endLng){
