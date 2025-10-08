@@ -1,401 +1,474 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>DryRide – Fahrten & Warnungen</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>DryRide — Uber Style</title>
+  <link rel="preconnect" href="https://maps.googleapis.com">
   <style>
-    body { font-family: Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background: #f4f4f4; color:#222; }
-    h1 { margin-bottom: 10px; }
-    .col { display:flex; gap:16px; }
-    .panel { background:white; padding:12px; border-radius:8px; box-shadow:0 1px 2px rgba(0,0,0,.05); flex:1; }
-    label { display:block; margin-top:8px; font-size:0.9rem; }
-    input[type="text"], input[type="time"], select, button { padding:8px; margin-top:6px; width:100%; box-sizing:border-box; }
-    button { background:#2e8b57; color:white; border: none; border-radius:6px; cursor:pointer; }
-    button.secondary { background:#888; }
-    .small { width:auto; display:inline-block; padding:6px 10px; font-size:0.9rem; }
-    #result { margin-top:10px; padding:12px; border-radius:6px; background:white; border-left:4px solid #2e8b57; }
-    .error { border-left-color:#e53935; color:#e53935; }
-    .loading { border-left-color:#ff9800; color:#ff9800; }
-    .ride { border:1px solid #eee; padding:8px; border-radius:6px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; }
-    .ride .meta { font-size:0.9rem; }
-    .actions button { margin-left:6px; }
-    .toggle { cursor:pointer; padding:6px 10px; border-radius:6px; border:1px solid #ccc; background:#fff; }
-    .enabled { background:#dff0d8; border-color:#2e8b57; }
-    .disabled { background:#f8d7da; border-color:#e53935; }
-    .note { font-size:0.9rem; color:#666; margin-top:6px; }
+    :root{
+      --bg:#0f1115;
+      --card:#121417;
+      --muted:#9aa3b2;
+      --accent:#00d084;
+      --danger:#ff5252;
+      --glass: rgba(255,255,255,0.03);
+      --radius:14px;
+      --shadow: 0 6px 20px rgba(2,6,23,0.6);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      color-scheme: dark;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; background:linear-gradient(180deg,#0b0c0e,#0f1115);
+      color:#e6eef8; -webkit-font-smoothing:antialiased; padding:18px;
+      display:flex; align-items:start; justify-content:center;
+      font-size:15px;
+    }
+    .app{
+      width:100%; max-width:980px;
+      display:grid; grid-template-columns: 1fr 420px; gap:18px;
+    }
+
+    /* Header */
+    header{grid-column:1/-1; display:flex; align-items:center; justify-content:space-between; margin-bottom:6px}
+    header h1{margin:0; font-size:20px; letter-spacing:0.2px}
+    header .sub{color:var(--muted); font-size:13px}
+
+    /* Left panel (main) */
+    .panel{
+      background:linear-gradient(180deg, rgba(255,255,255,0.02), var(--glass));
+      border-radius:var(--radius); padding:18px; box-shadow:var(--shadow);
+    }
+    .panel h2{margin:0 0 8px 0; font-size:16px}
+    .form-row{display:flex; gap:10px; margin-top:10px}
+    .field{display:flex; flex-direction:column; gap:6px; width:100%}
+    input[type="text"], input[type="time"], select{
+      background:transparent; border:1px solid rgba(255,255,255,0.06);
+      color:inherit; padding:10px 12px; border-radius:10px; outline:none;
+    }
+    input::placeholder{color:rgba(255,255,255,0.25)}
+    .small-btn{
+      background:transparent; border:1px solid rgba(255,255,255,0.06);
+      color:inherit; padding:8px 12px; border-radius:10px; cursor:pointer;
+    }
+    .primary{
+      background:linear-gradient(90deg,var(--accent), #00c37a); color:#061012; border:none;
+      padding:10px 14px; border-radius:12px; cursor:pointer; font-weight:600;
+      box-shadow: 0 6px 18px rgba(0,208,132,0.12);
+    }
+    .muted{ color:var(--muted); font-size:13px; margin-top:8px }
+
+    /* Right panel (rides) */
+    .rides-list{ display:flex; flex-direction:column; gap:10px; margin-top:8px }
+    .ride{
+      display:flex; justify-content:space-between; align-items:center;
+      padding:10px; border-radius:10px; background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.02));
+      border:1px solid rgba(255,255,255,0.03);
+    }
+    .ride .meta{ font-size:14px; color:#e6eef8 }
+    .ride .meta .sub{color:var(--muted); font-size:12px}
+
+    .action-btn{ background:transparent; border:1px solid rgba(255,255,255,0.06); color:inherit; padding:6px 8px; border-radius:8px; cursor:pointer; margin-left:6px }
+    .action-btn.secondary{ border-color:rgba(255,255,255,0.03) }
+    .toggle-enabled{ background:rgba(0,208,132,0.12); color:var(--accent); border:1px solid rgba(0,208,132,0.18) }
+    .toggle-disabled{ background:rgba(255,82,82,0.06); color:var(--danger); border:1px solid rgba(255,82,82,0.08) }
+
+    /* result card */
+    #result{ margin-top:12px; padding:12px; border-radius:10px; background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.02)); border:1px solid rgba(255,255,255,0.03); color:var(--muted); }
+
+    /* responsive */
+    @media (max-width:900px){
+      .app{ grid-template-columns:1fr; padding:12px }
+    }
   </style>
 </head>
 <body>
-  <h1>DryRie – Fahrten & Warnungen</h1>
+  <div class="app" role="application">
+    <header>
+      <div>
+        <h1>DryRide</h1>
+        <div class="sub">Trocken & smart radeln — Benachrichtigungen 1 h vorher</div>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center">
+        <button id="notifyPermissionBtn" class="small-btn">🔔 Notifications</button>
+      </div>
+    </header>
 
-  <div class="col">
-    <!-- Linke Spalte: globale Adressen + Rechner -->
-    <div class="panel" style="flex:1.2">
+    <!-- MAIN -->
+    <div class="panel" aria-live="polite">
       <h2>Adressen & Einzelberechnung</h2>
 
-      <label for="homeAddress">Deine Hausadresse (als Ziel):</label>
-      <input type="text" id="homeAddress" placeholder="z.B. Musterstraße 1, 10115 Berlin">
-
-      <label for="startAddress" class="optional">Von-Adresse (optional, als Start):</label>
-      <input type="text" id="startAddress" placeholder="z.B. Bahnhofstraße 5, Den Haag">
-
-      <label for="rainLevel">Empfindlichkeit gegenüber Regen:</label>
-      <select id="rainLevel">
-        <option value="0.2" selected>Leicht (≤ 0.2 mm/h)</option>
-        <option value="0.5">Mittel (≤ 0.5 mm/h)</option>
-        <option value="1.0">Stark (≤ 1.0 mm/h)</option>
-      </select>
-
-      <label for="dryWindow">Gewünschtes regenfreies Zeitfenster (Minuten):</label>
-      <select id="dryWindow">
-        <option value="15">15</option>
-        <option value="30" selected>30</option>
-        <option value="45">45</option>
-        <option value="60">60</option>
-        <option value="90">90</option>
-      </select>
-
-      <div style="margin-top:8px">
-        <button onclick="calculateSafeRide()" class="small">Berechnen: Wann losfahren?</button>
-        <button onclick="saveHomeAddress()" class="small secondary">Hausadresse speichern</button>
-        <button onclick="saveStartAddress()" class="small secondary">Von-Adresse speichern</button>
+      <div class="form-row" style="margin-top:12px">
+        <div class="field">
+          <label class="muted">Hausadresse (Ziel)</label>
+          <input id="homeAddress" type="text" placeholder="z. B. Musterstraße 1, 10115 Berlin" autocomplete="off">
+        </div>
+        <div class="field">
+          <label class="muted">Von-Adresse (optional)</label>
+          <input id="startAddress" type="text" placeholder="z. B. Bahnhofstraße 5" autocomplete="off">
+        </div>
       </div>
 
-      <div id="result" class="note">Ergebnisse werden hier angezeigt.</div>
+      <div class="form-row">
+        <div class="field">
+          <label class="muted">Regen-Empfindlichkeit</label>
+          <select id="rainLevel">
+            <option value="0.2">Leicht (≤ 0.2)</option>
+            <option value="0.5">Mittel (≤ 0.5)</option>
+            <option value="1.0">Stark (≤ 1.0)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="muted">Trocken-Fenster (Min)</label>
+          <select id="dryWindow">
+            <option value="15">15</option>
+            <option value="30" selected>30</option>
+            <option value="45">45</option>
+            <option value="60">60</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:8px; margin-top:12px">
+        <button class="primary" onclick="calculateSafeRide()">Berechnen: Wann losfahren?</button>
+        <button class="action-btn secondary" id="saveHomeBtn">Haus speichern</button>
+        <button class="action-btn secondary" id="saveStartBtn">Von speichern</button>
+      </div>
+
+      <div id="result" class="muted">Ergebnis erscheint hier.</div>
     </div>
 
-    <!-- Rechte Spalte: Fahrten verwalten -->
-    <div class="panel" style="flex:1">
+    <!-- RIDES -->
+    <aside class="panel">
       <h2>Gespeicherte Fahrten</h2>
 
-      <label for="rideTitle">Titel (z.B. Arbeit)</label>
-      <input type="text" id="rideTitle" placeholder="z. B. Arbeit">
+      <div style="margin-top:8px">
+        <label class="muted">Titel</label>
+        <input id="rideTitle" type="text" placeholder="z. B. Arbeit">
 
-      <label for="rideOrigin">Startadresse (Autocomplete)</label>
-      <input type="text" id="rideOrigin" placeholder="z. B. Bahnhofstraße 5">
+        <label class="muted" style="margin-top:8px">Startadresse</label>
+        <input id="rideOrigin" type="text" placeholder="Start (Autocomplete)">
 
-      <label for="rideDestination">Zieladresse (Autocomplete) — leer = Hausadresse</label>
-      <input type="text" id="rideDestination" placeholder="z. B. Musterstraße 1">
+        <label class="muted" style="margin-top:8px">Ziel (leer = Hausadresse)</label>
+        <input id="rideDestination" type="text" placeholder="Ziel (Autocomplete)">
 
-      <label for="rideTime">Abfahrtszeit</label>
-      <input type="time" id="rideTime" value="07:30">
+        <div class="form-row" style="margin-top:8px">
+          <div class="field">
+            <label class="muted">Abfahrtszeit</label>
+            <input id="rideTime" type="time" value="07:30">
+          </div>
+          <div class="field">
+            <label class="muted">Wiederholung</label>
+            <select id="rideRepeat"><option value="once">Einmalig</option><option value="daily" selected>Täglich</option></select>
+          </div>
+        </div>
 
-      <label for="rideRepeat">Wiederholung</label>
-      <select id="rideRepeat">
-        <option value="once">Einmalig</option>
-        <option value="daily" selected>Täglich</option>
-      </select>
+        <div class="form-row" style="margin-top:8px">
+          <div class="field">
+            <label class="muted">Fenster (Min)</label>
+            <select id="rideWindow"><option>15</option><option selected>30</option><option>45</option><option>60</option></select>
+          </div>
+          <div class="field">
+            <label class="muted">Max Regen (mm/h)</label>
+            <select id="rideRainLevel"><option value="0.2">0.2</option><option value="0.5">0.5</option><option value="1.0">1.0</option></select>
+          </div>
+        </div>
 
-      <label for="rideWindow">Trocken-Fenster (Minuten)</label>
-      <select id="rideWindow">
-        <option value="15">15</option>
-        <option value="30" selected>30</option>
-        <option value="45">45</option>
-        <option value="60">60</option>
-      </select>
-
-      <label for="rideRainLevel">Max. Regen (mm/h)</label>
-      <select id="rideRainLevel">
-        <option value="0.2" selected>Leicht (0.2)</option>
-        <option value="0.5">Mittel (0.5)</option>
-        <option value="1.0">Stark (1.0)</option>
-      </select>
-
-      <div style="margin-top:10px">
-        <button onclick="saveRide()">Fahrt speichern</button>
-        <button onclick="clearRideForm()" class="secondary">Formular löschen</button>
+        <div style="display:flex; gap:8px; margin-top:10px">
+          <button class="primary" onclick="saveRide()">Fahrt speichern</button>
+          <button class="action-btn secondary" onclick="clearRideForm()">Form löschen</button>
+        </div>
       </div>
 
-      <h3 style="margin-top:12px">Deine Fahrten</h3>
-      <div id="ridesList" class="note">Keine Fahrten gespeichert.</div>
-    </div>
+      <div style="margin-top:12px">
+        <h3 style="margin:8px 0 6px 0; font-size:14px; color:#dfe9f3">Deine Fahrten</h3>
+        <div id="ridesList" class="rides-list">
+          <!-- dynamisch -->
+        </div>
+      </div>
+    </aside>
   </div>
 
-  <!-- Google Maps + Places -->
+  <!-- Google Places -->
   <script async
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCfmA_2wFMG2eXCJF0stxziBnM4CVNpoB0&libraries=places">
   </script>
 
   <script>
-  /************************************************************************
-   * DryRide — Komplettes Script
-   * - Autocomplete (Google Places) für Adressen
-   * - Mehrere Fahrten speichern / editieren / löschen
-   * - Periodische Prüfung (alle 10 min) -> Notification ~1h vor Fahrt, falls Regen
-   * - Wetter: robustes minutely / fallback hourly handling (Open-Meteo)
-   ************************************************************************/
+  /* ============ DryRide (Uber-Style) ============ */
+  // Storage keys
+  const KEY_RIDES = 'dryride_rides_v1';
+  const KEY_HOME = 'dryride_home_v1';
+  const KEY_START = 'dryride_start_v1';
 
-  // ---------- Hilfsfunktionen / Speicher ----------
-  const STORAGE_KEYS = {
-    RIDES: 'dryride_rides_v1',
-    HOME: 'dryride_home',
-    START: 'dryride_start'
-  };
+  // Autocomplete vars
+  let acHome, acStart, acRideOrigin, acRideDest;
 
-  function saveRidesToStorage(rides) {
-    localStorage.setItem(STORAGE_KEYS.RIDES, JSON.stringify(rides));
-  }
-  function loadRidesFromStorage() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEYS.RIDES);
-      return raw ? JSON.parse(raw) : [];
-    } catch(e) { return []; }
+  function showResult(msg, type){
+    const el = document.getElementById('result');
+    el.innerHTML = msg;
+    el.className = type ? type : 'muted';
   }
 
-  function saveHomeToStorage(addressObj) {
-    localStorage.setItem(STORAGE_KEYS.HOME, JSON.stringify(addressObj));
-  }
-  function loadHomeFromStorage() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.HOME)); } catch(e){ return null; }
-  }
-  function saveStartToStorage(addressObj) {
-    localStorage.setItem(STORAGE_KEYS.START, JSON.stringify(addressObj));
-  }
-  function loadStartFromStorage() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.START)); } catch(e){ return null; }
-  }
-
-  // ---------- Autocomplete helpers ----------
-  let acHome, acStart, acRideOrigin, acRideDestination;
-  function waitForGoogleMapsReady(cb) {
+  // Wait for Google maps library
+  function whenMapsReady(cb){
     if (window.google && google.maps && google.maps.places) return cb();
-    const to = setInterval(() => {
-      if (window.google && google.maps && google.maps.places) { clearInterval(to); cb(); }
+    const t = setInterval(()=> {
+      if (window.google && google.maps && google.maps.places){ clearInterval(t); cb(); }
     }, 200);
-    // timeout not necessary - user must ensure key works
   }
 
-  function attachAutocompleteToInput(inputEl, onPlaceSelected) {
-    const ac = new google.maps.places.Autocomplete(inputEl, { types: ['address'] });
+  // Attach autocomplete
+  function attachAutocomplete(el, storeAsDataset=true){
+    const ac = new google.maps.places.Autocomplete(el, { types:['address'] });
     ac.addListener('place_changed', () => {
       const place = ac.getPlace();
       if (!place || !place.geometry) return;
-      const formatted = place.formatted_address || inputEl.value;
-      const lat = place.geometry.location.lat();
-      const lng = place.geometry.location.lng();
-      onPlaceSelected({ address: formatted, lat, lng, place });
+      const formatted = place.formatted_address || el.value;
+      const lat = place.geometry.location.lat(), lng = place.geometry.location.lng();
+      el.value = formatted;
+      if (storeAsDataset){
+        el.dataset.lat = lat; el.dataset.lng = lng;
+      }
     });
     return ac;
   }
 
-  // ---------- Initialize Autocomplete fields ----------
-  function initAutocompleteAll() {
-    waitForGoogleMapsReady(() => {
-      acHome = attachAutocompleteToInput(document.getElementById('homeAddress'), (obj) => {
-        saveHomeToStorage(obj);
-        showResult(`🏠 Hausadresse gespeichert: ${obj.address}`, 'success');
-      });
-      acStart = attachAutocompleteToInput(document.getElementById('startAddress'), (obj) => {
-        saveStartToStorage(obj);
-        showResult(`🚉 Von-Adresse gespeichert: ${obj.address}`, 'success');
-      });
-      acRideOrigin = attachAutocompleteToInput(document.getElementById('rideOrigin'), (obj) => {
-        // keep in form values, but not saved until ride saved
-        document.getElementById('rideOrigin').dataset.lat = obj.lat;
-        document.getElementById('rideOrigin').dataset.lng = obj.lng;
-        document.getElementById('rideOrigin').value = obj.address;
-      });
-      acRideDestination = attachAutocompleteToInput(document.getElementById('rideDestination'), (obj) => {
-        document.getElementById('rideDestination').dataset.lat = obj.lat;
-        document.getElementById('rideDestination').dataset.lng = obj.lng;
-        document.getElementById('rideDestination').value = obj.address;
-      });
-
-      // load stored home/start into inputs
-      const home = loadHomeFromStorage();
-      if (home) document.getElementById('homeAddress').value = home.address;
-      const start = loadStartFromStorage();
-      if (start) document.getElementById('startAddress').value = start.address;
-    });
+  // save home/start
+  function saveHomeAddress(){
+    const v = document.getElementById('homeAddress').value.trim();
+    if (!v) return showResult('Bitte Hausadresse eingeben', 'error');
+    const lat = document.getElementById('homeAddress').dataset.lat;
+    const lng = document.getElementById('homeAddress').dataset.lng;
+    const obj = { address: v, lat: lat||null, lng: lng||null };
+    localStorage.setItem(KEY_HOME, JSON.stringify(obj));
+    showResult('🏠 Hausadresse gespeichert', 'success');
+  }
+  function saveStartAddress(){
+    const v = document.getElementById('startAddress').value.trim();
+    if (!v) { localStorage.removeItem(KEY_START); showResult('Startadresse entfernt', 'success'); return; }
+    const lat = document.getElementById('startAddress').dataset.lat;
+    const lng = document.getElementById('startAddress').dataset.lng;
+    const obj = { address: v, lat: lat||null, lng: lng||null };
+    localStorage.setItem(KEY_START, JSON.stringify(obj));
+    showResult('🚉 Von-Adresse gespeichert', 'success');
   }
 
-  // ---------- Geocoding fallback (if user typed address, not selected) ----------
-  async function geocodeAddressJS(address) {
-    // Use Google geocoder (requires google maps loaded)
-    return new Promise((resolve, reject) => {
-      if (!window.google || !google.maps) return reject(new Error('Google Maps nicht geladen'));
+  // Geocode fallback (Google geocoder)
+  function geocodeAddress(address){
+    return new Promise((res, rej) => {
+      if (!window.google || !google.maps) return rej(new Error('Google Maps nicht geladen'));
       const geocoder = new google.maps.Geocoder();
       geocoder.geocode({ address }, (results, status) => {
-        if (status === 'OK' && results && results.length) {
-          const loc = results[0].geometry.location;
-          resolve({ address: results[0].formatted_address, lat: loc.lat(), lng: loc.lng() });
-        } else {
-          reject(new Error('Geocoding fehlgeschlagen: ' + status));
-        }
+        if (status==='OK' && results && results.length){
+          const f = results[0];
+          res({ address: f.formatted_address, lat: f.geometry.location.lat(), lng: f.geometry.location.lng() });
+        } else rej(new Error('Geocoding fehlgeschlagen: ' + status));
       });
     });
   }
 
-  // ---------- Wetter: Open-Meteo robust (minutely / minutely_15 / hourly fallback) ----------
-  async function getWeatherForecast(lat, lng) {
-    // Try minutely first (request 'minutely' param)
-    let url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&minutely=precipitation&timezone=Europe/Berlin&forecast_days=1`;
+  // Weather - robust Open-Meteo
+  async function getWeatherForecast(lat, lng){
+    // try minutely
+    const tryUrls = [
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&minutely=precipitation&timezone=Europe/Berlin&forecast_days=1`,
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&minutely_15=precipitation&timezone=Europe/Berlin&forecast_days=1`,
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&minutely_5=precipitation&timezone=Europe/Berlin&forecast_days=1`
+    ];
+    for (const u of tryUrls){
+      try {
+        const r = await fetch(u);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const d = await r.json();
+        if (d.minutely && d.minutely.time && d.minutely.precipitation) return { time: d.minutely.time, precipitation:d.minutely.precipitation, stepMinutes:1 };
+        if (d.minutely_5 && d.minutely_5.time) {
+          // expand 5-min blocks to 1-min resolution (repeat)
+          const times=[], precip=[];
+          for (let i=0;i<d.minutely_5.time.length;i++){
+            const base = new Date(d.minutely_5.time[i]).getTime();
+            for (let j=0;j<5;j++){ times.push(new Date(base + j*60000).toISOString()); precip.push(d.minutely_5.precipitation[i]); }
+          }
+          return { time: times, precipitation: precip, stepMinutes:1 };
+        }
+        if (d.minutely_15 && d.minutely_15.time) {
+          const times=[], precip=[];
+          for (let i=0;i<d.minutely_15.time.length;i++){
+            const base = new Date(d.minutely_15.time[i]).getTime();
+            for (let j=0;j<15;j++){ times.push(new Date(base + j*60000).toISOString()); precip.push(d.minutely_15.precipitation[i]); }
+          }
+          return { time: times, precipitation: precip, stepMinutes:1 };
+        }
+      } catch(e){ /* continue */ }
+    }
+    // hourly fallback
     try {
-      let r = await fetch(url);
+      const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=precipitation&timezone=Europe/Berlin&forecast_days=1`);
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      let data = await r.json();
-      if (data.minutely && data.minutely.time && data.minutely.precipitation) {
-        return { time: data.minutely.time, precipitation: data.minutely.precipitation, stepMinutes: 1 };
-      }
-      // fallback keys sometimes named minutely_1, minutely_5, minutely_15
-      if (data.minutely_1 && data.minutely_1.time) return { time: data.minutely_1.time, precipitation: data.minutely_1.precipitation, stepMinutes:1 };
-      if (data.minutely_5 && data.minutely_5.time) {
-        // expand 5-min values to 1-min steps (repeat value)
-        let times=[], precip=[];
-        for (let i=0;i<data.minutely_5.time.length;i++){
-          const base = new Date(data.minutely_5.time[i]).getTime();
-          for (let j=0;j<5;j++){
-            times.push(new Date(base + j*60000).toISOString());
-            precip.push(data.minutely_5.precipitation[i]);
-          }
-        }
-        return { time: times, precipitation: precip, stepMinutes: 1 };
-      }
-      if (data.minutely_15 && data.minutely_15.time) {
-        let times=[], precip=[];
-        for (let i=0;i<data.minutely_15.time.length;i++){
-          const base = new Date(data.minutely_15.time[i]).getTime();
-          for (let j=0;j<15;j++){
-            times.push(new Date(base + j*60000).toISOString());
-            precip.push(data.minutely_15.precipitation[i]);
-          }
-        }
-        return { time: times, precipitation: precip, stepMinutes: 1 };
-      }
-    } catch(e){
-      // continue to hourly fallback
-      console.warn('minutely failed, fallback hourly:', e);
-    }
-
-    // Fallback to hourly
-    try {
-      const url2 = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=precipitation&timezone=Europe/Berlin&forecast_days=1`;
-      const r2 = await fetch(url2);
-      if (!r2.ok) throw new Error('HTTP ' + r2.status);
-      const data2 = await r2.json();
-      if (data2.hourly && data2.hourly.time && data2.hourly.precipitation) {
-        return { time: data2.hourly.time, precipitation: data2.hourly.precipitation, stepMinutes: 60 };
-      }
-    } catch(e){
-      console.error('hourly fallback failed', e);
-    }
-
-    throw new Error('Wetterdaten unvollständig oder nicht verfügbar für diesen Ort.');
+      const d = await r.json();
+      if (d.hourly && d.hourly.time && d.hourly.precipitation) return { time: d.hourly.time, precipitation: d.hourly.precipitation, stepMinutes:60 };
+    } catch(e){}
+    throw new Error('Wetterdaten nicht verfügbar für diesen Ort');
   }
 
-  // ---------- Hilfsfunktionen für Wetterzeiten ----------
-  function findClosestIndex(timesISO, targetDate) {
-    // timesISO: array of ISO strings
-    let best = 0;
-    let bestDiff = Infinity;
-    for (let i=0;i<timesISO.length;i++){
-      const diff = Math.abs(new Date(timesISO[i]) - targetDate);
-      if (diff < bestDiff) { bestDiff = diff; best = i; }
+  // helper avg
+  function avg(arr){ if (!arr || !arr.length) return 0; return arr.reduce((a,b)=>a+b,0)/arr.length; }
+
+  // calculate safe departure (UI-logic)
+  function calculateSafeDeparture(durationSeconds, weatherData, desiredMinutes, maxPrecip){
+    const now = new Date();
+    const times = weatherData.time;
+    const precip = weatherData.precipitation;
+    const step = weatherData.stepMinutes || 1;
+    const stepsNeeded = Math.ceil(desiredMinutes / step);
+
+    for (let i=0;i<=precip.length-stepsNeeded;i++){
+      const window = precip.slice(i, i+stepsNeeded);
+      const mean = avg(window);
+      const startTime = new Date(times[i]);
+      if (mean <= maxPrecip && startTime > now){
+        const departureTime = new Date(startTime.getTime() - (durationSeconds + 300)*1000);
+        return { startTime, departureTime, mean };
+      }
     }
-    return best;
-  }
-  function average(arr) {
-    if (!arr || arr.length===0) return 0;
-    return arr.reduce((a,b)=>a+b,0)/arr.length;
+    return null;
   }
 
-  // ---------- Rides management ----------
-  function renderRidesList() {
-    const rides = loadRidesFromStorage();
-    const container = document.getElementById('ridesList');
-    if (!rides.length) { container.innerHTML = 'Keine Fahrten gespeichert.'; return; }
-    container.innerHTML = '';
-    rides.forEach(ride => {
-      const div = document.createElement('div');
-      div.className = 'ride';
-      const left = document.createElement('div');
-      left.className = 'meta';
-      left.innerHTML = `<strong>${escapeHtml(ride.title||'ohne Titel')}</strong><br>
-        ${escapeHtml(ride.originAddress||'Start nicht gesetzt')} → ${escapeHtml(ride.destinationAddress||'Ziel nicht gesetzt')}<br>
-        ${ride.time} · ${ride.repeat} · Fenster ${ride.window}min · Regen ≤ ${ride.rainLevel} mm/h`;
-      const right = document.createElement('div');
-      right.className = 'actions';
-      const toggle = document.createElement('button');
-      toggle.className = 'toggle ' + (ride.enabled ? 'enabled' : 'disabled');
-      toggle.textContent = ride.enabled ? 'Aktiv' : 'Inaktiv';
-      toggle.onclick = () => { toggleRideEnabled(ride.id); };
-      const edit = document.createElement('button');
-      edit.className = 'small';
-      edit.textContent = 'Bearbeiten';
-      edit.onclick = () => { loadRideIntoForm(ride.id); };
-      const del = document.createElement('button');
-      del.className = 'small secondary';
-      del.textContent = 'Löschen';
-      del.onclick = () => { deleteRide(ride.id); };
-      right.appendChild(toggle);
-      right.appendChild(edit);
-      right.appendChild(del);
-      div.appendChild(left);
-      div.appendChild(right);
-      container.appendChild(div);
+  // get route duration using Google Directions
+  function getRouteDuration(startLat, startLng, endLat, endLng){
+    return new Promise((res, rej) => {
+      if (!window.google || !google.maps) return rej(new Error('Google Maps nicht geladen'));
+      const ds = new google.maps.DirectionsService();
+      ds.route({
+        origin: { lat: parseFloat(startLat), lng: parseFloat(startLng) },
+        destination: { lat: parseFloat(endLat), lng: parseFloat(endLng) },
+        travelMode: google.maps.TravelMode.BICYCLING
+      }, (result, status) => {
+        if (status==='OK' && result.routes && result.routes.length){
+          res(result.routes[0].legs[0].duration.value);
+        } else rej(new Error('Directions fehlgeschlagen: ' + status));
+      });
     });
   }
 
-  function escapeHtml(s) {
-    if (!s) return '';
-    return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  // compute UI single-run calculation
+  async function calculateSafeRide(){
+    showResult('Loading…', 'loading');
+    try {
+      // get home
+      let home = JSON.parse(localStorage.getItem(KEY_HOME) || 'null');
+      if (!home && document.getElementById('homeAddress').value.trim()){
+        try { home = await geocodeAddress(document.getElementById('homeAddress').value.trim()); localStorage.setItem(KEY_HOME, JSON.stringify(home)); }
+        catch(e){ /* ignore */ }
+      }
+      if (!home) return showResult('Bitte Hausadresse speichern', 'error');
+
+      // get start coordinates
+      let startCoord = null;
+      const startVal = document.getElementById('startAddress').value.trim();
+      if (startVal){
+        const ds = document.getElementById('startAddress').dataset;
+        if (ds.lat && ds.lng) startCoord = {lat:ds.lat, lng:ds.lng};
+        else{
+          try { const g = await geocodeAddress(startVal); startCoord={lat:g.lat, lng:g.lng}; }
+          catch(e){ /* ignore */ }
+        }
+      } else {
+        // try GPS
+        try {
+          const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(p=>res({lat:p.coords.latitude, lng:p.coords.longitude}), err=>rej(err), {timeout:5000}));
+          startCoord = {lat:pos.lat, lng:pos.lng};
+        } catch(e){}
+      }
+      if (!startCoord) return showResult('Kein Startpunkt (Von-Adresse leer & GPS nicht verfügbar)', 'error');
+
+      const desired = parseInt(document.getElementById('dryWindow').value);
+      const maxPrecip = parseFloat(document.getElementById('rainLevel').value);
+
+      showResult('📍 Route berechnen…', 'loading');
+
+      const duration = await getRouteDuration(startCoord.lat, startCoord.lng, home.lat || home.lat, home.lng || home.lng);
+
+      showResult('🌦 Wetterdaten laden…', 'loading');
+      const weatherData = await getWeatherForecast(startCoord.lat, startCoord.lng);
+
+      const safe = calculateSafeDeparture(duration, weatherData, desired, maxPrecip);
+      if (!safe) return showResult(`☔ Kein ${desired}-Minuten-Fenster ohne Niederschlag gefunden`, 'error');
+
+      const wait = Math.max(0, Math.round((safe.departureTime - new Date())/60000));
+      const driveMin = Math.ceil(duration/60);
+      const txt = (wait<=5)
+        ? `🌤 Du kannst jetzt losfahren — erreichst trocken dein Ziel (Fahrtzeit ${driveMin} Min).`
+        : `🌤 Nächstes trockenes Fenster ab ${safe.startTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}. Fahre in ${wait} Min los (Fahrtzeit ${driveMin} Min).`;
+      showResult(txt, 'success');
+      startCountdown(safe.departureTime);
+    } catch(e){
+      console.error(e);
+      showResult('Fehler: ' + (e.message || e), 'error');
+    }
   }
 
-  function toggleRideEnabled(id){
-    const rides = loadRidesFromStorage();
-    const r = rides.find(x=>x.id===id);
-    if (!r) return;
-    r.enabled = !r.enabled;
-    saveRidesToStorage(rides);
-    renderRidesList();
+  // countdown UI
+  let countdownTimer = null;
+  function startCountdown(depTime){
+    if (countdownTimer) clearInterval(countdownTimer);
+    if (!depTime) return;
+    function upd(){
+      const mins = Math.max(0, Math.round((depTime - new Date())/60000));
+      const el = document.getElementById('result');
+      el.innerHTML = `🚲 Abfahrt in ${mins} Minuten`;
+      el.className = 'loading';
+      if (mins <=0) { clearInterval(countdownTimer); el.className='success'; }
+    }
+    upd();
+    countdownTimer = setInterval(upd, 60000);
   }
+
+  // ========== Rides CRUD ==========
+  function loadRides(){ try { return JSON.parse(localStorage.getItem(KEY_RIDES) || '[]'); } catch(e){ return []; } }
+  function saveRides(r){ localStorage.setItem(KEY_RIDES, JSON.stringify(r)); }
+
+  function renderRides(){
+    const list = document.getElementById('ridesList');
+    const rides = loadRides();
+    list.innerHTML = rides.length ? '' : '<div class="muted">Keine Fahrten</div>';
+    rides.forEach(r => {
+      const el = document.createElement('div'); el.className='ride';
+      const left = document.createElement('div'); left.className='meta';
+      left.innerHTML = `<strong>${escapeHtml(r.title||'untitled')}</strong><div class="sub">${escapeHtml(r.originAddress||'Start')} → ${escapeHtml(r.destinationAddress||'Ziel')}</div><div class="sub">${r.time} · ${r.repeat}</div>`;
+      const right = document.createElement('div');
+      const toggle = document.createElement('button');
+      toggle.className = 'action-btn ' + (r.enabled ? 'toggle-enabled' : 'toggle-disabled');
+      toggle.textContent = r.enabled ? 'Aktiv' : 'Inaktiv';
+      toggle.onclick = ()=> { r.enabled = !r.enabled; saveRides(loadRides().map(x=>x.id===r.id? r:x)); renderRides(); };
+      const edit = document.createElement('button'); edit.className='action-btn'; edit.textContent='Bearbeiten'; edit.onclick = ()=> loadRideIntoForm(r.id);
+      const del = document.createElement('button'); del.className='action-btn secondary'; del.textContent='Löschen'; del.onclick = ()=> { deleteRide(r.id); };
+      right.appendChild(toggle); right.appendChild(edit); right.appendChild(del);
+      el.appendChild(left); el.appendChild(right);
+      list.appendChild(el);
+    });
+  }
+  function escapeHtml(s){ return (s||'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
   function deleteRide(id){
-    let rides = loadRidesFromStorage();
-    rides = rides.filter(r=>r.id!==id);
-    saveRidesToStorage(rides);
-    renderRidesList();
-    showResult('Fahrt gelöscht', 'success');
+    const arr = loadRides().filter(r=>r.id!==id);
+    saveRides(arr); renderRides(); showResult('Fahrt gelöscht', 'success');
   }
 
   function loadRideIntoForm(id){
-    const rides = loadRidesFromStorage();
-    const r = rides.find(x=>x.id===id);
-    if (!r) return showResult('Fahrt nicht gefunden', 'error');
-    document.getElementById('rideTitle').value = r.title;
-    document.getElementById('rideOrigin').value = r.originAddress;
-    document.getElementById('rideOrigin').dataset.lat = r.originLat;
-    document.getElementById('rideOrigin').dataset.lng = r.originLng;
-    document.getElementById('rideDestination').value = r.destinationAddress;
-    document.getElementById('rideDestination').dataset.lat = r.destinationLat;
-    document.getElementById('rideDestination').dataset.lng = r.destinationLng;
-    document.getElementById('rideTime').value = r.time;
-    document.getElementById('rideRepeat').value = r.repeat;
-    document.getElementById('rideWindow').value = r.window;
-    document.getElementById('rideRainLevel').value = r.rainLevel;
-    // mark as editing by setting data-edit-id on save button
-    document.querySelector('#ridesList').dataset.editId = id;
-    showResult('Fahrt in Formular geladen (Bearbeiten möglich).', 'success');
+    const rides = loadRides(); const r = rides.find(x=>x.id===id); if(!r) return;
+    document.getElementById('rideTitle').value=r.title;
+    document.getElementById('rideOrigin').value=r.originAddress; document.getElementById('rideOrigin').dataset.lat=r.originLat; document.getElementById('rideOrigin').dataset.lng=r.originLng;
+    document.getElementById('rideDestination').value=r.destinationAddress; document.getElementById('rideDestination').dataset.lat=r.destinationLat; document.getElementById('rideDestination').dataset.lng=r.destinationLng;
+    document.getElementById('rideTime').value=r.time; document.getElementById('rideRepeat').value=r.repeat;
+    document.getElementById('rideWindow').value=r.window; document.getElementById('rideRainLevel').value=r.rainLevel;
+    // store edit id
+    document.getElementById('ridesList').dataset.editId = id;
+    showResult('Fahrt geladen (Bearbeiten möglich)', 'success');
   }
 
-  function clearRideForm(){
-    document.getElementById('rideTitle').value = '';
-    document.getElementById('rideOrigin').value = '';
-    delete document.getElementById('rideOrigin').dataset.lat;
-    delete document.getElementById('rideOrigin').dataset.lng;
-    document.getElementById('rideDestination').value = '';
-    delete document.getElementById('rideDestination').dataset.lat;
-    delete document.getElementById('rideDestination').dataset.lng;
-    document.getElementById('rideTime').value = '07:30';
-    document.getElementById('rideRepeat').value = 'daily';
-    document.getElementById('rideWindow').value = '30';
-    document.getElementById('rideRainLevel').value = '0.2';
-    delete document.querySelector('#ridesList').dataset.editId;
-    showResult('Formular geleert.', 'success');
-  }
-
-  // ---------- Create / Update ride ----------
   async function saveRide(){
     const title = document.getElementById('rideTitle').value.trim();
     let originAddress = document.getElementById('rideOrigin').value.trim();
@@ -409,332 +482,155 @@
     const windowMin = parseInt(document.getElementById('rideWindow').value);
     const rainLevel = parseFloat(document.getElementById('rideRainLevel').value);
 
-    if (!originAddress) return showResult('Bitte Startadresse angeben.', 'error');
-    if (!destinationAddress) {
-      // use stored home if destination empty
-      const home = loadHomeFromStorage();
-      if (!home) return showResult('Keine Zieladresse angegeben und keine Hausadresse gespeichert.', 'error');
+    if (!originAddress) return showResult('Bitte Startadresse eingeben', 'error');
+    if (!destinationAddress){
+      const home = JSON.parse(localStorage.getItem(KEY_HOME) || 'null');
+      if (!home) return showResult('Bitte Ziel eingeben oder Hausadresse speichern', 'error');
       destinationAddress = home.address; destinationLat = home.lat; destinationLng = home.lng;
     }
 
-    // If lat/lng missing, geocode
     try {
-      if (!originLat || !originLng) {
-        const g = await geocodeAddressJS(originAddress);
-        originAddress = g.address; originLat = g.lat; originLng = g.lng;
+      if (!originLat || !originLng){ const g = await geocodeAddress(originAddress); originAddress = g.address; originLat=g.lat; originLng=g.lng; }
+      if (!destinationLat || !destinationLng){ const g = await geocodeAddress(destinationAddress); destinationAddress = g.address; destinationLat=g.lat; destinationLng=g.lng; }
+    } catch(e){ return showResult('Geocoding fehlgeschlagen', 'error'); }
+
+    const rides = loadRides();
+    const editId = document.getElementById('ridesList').dataset.editId;
+    if (editId){
+      const idx = rides.findIndex(x=>x.id===editId);
+      if (idx!==-1){
+        rides[idx] = {...rides[idx], title, originAddress, originLat, originLng, destinationAddress, destinationLat, destinationLng, time, repeat, window:windowMin, rainLevel, enabled:true};
+        saveRides(rides); renderRides(); delete document.getElementById('ridesList').dataset.editId; showResult('Fahrt aktualisiert','success'); clearRideForm(); return;
       }
-      if (!destinationLat || !destinationLng) {
-        const g2 = await geocodeAddressJS(destinationAddress);
-        destinationAddress = g2.address; destinationLat = g2.lat; destinationLng = g2.lng;
-      }
-    } catch(e){
-      return showResult('Geocoding fehlgeschlagen: ' + e.message, 'error');
     }
 
-    const rides = loadRidesFromStorage();
-    const editId = document.querySelector('#ridesList').dataset.editId;
-    if (editId) {
-      // update existing
-      const rIndex = rides.findIndex(r => r.id === editId);
-      if (rIndex === -1) return showResult('Zu bearbeitende Fahrt nicht gefunden.', 'error');
-      rides[rIndex] = {
-        ...rides[rIndex],
-        title, originAddress, originLat, originLng,
-        destinationAddress, destinationLat, destinationLng,
-        time, repeat, window: windowMin, rainLevel, enabled: true
-      };
-      saveRidesToStorage(rides);
-      renderRidesList();
-      clearRideForm();
-      showResult('Fahrt aktualisiert.', 'success');
-      return;
-    }
-
-    const ride = {
-      id: 'ride_' + Date.now(),
-      title, originAddress, originLat, originLng,
-      destinationAddress, destinationLat, destinationLng,
-      time, repeat, window: windowMin, rainLevel,
-      enabled: true,
-      notifiedFor: null // holds date string 'YYYY-MM-DD' for which notification already sent
-    };
-    rides.push(ride);
-    saveRidesToStorage(rides);
-    renderRidesList();
-    clearRideForm();
-    showResult('Fahrt gespeichert.', 'success');
-    // request permission for notifications if not already
+    const ride = { id:'r_'+Date.now(), title, originAddress, originLat, originLng, destinationAddress, destinationLat, destinationLng, time, repeat, window:windowMin, rainLevel, enabled:true, notifiedFor:null };
+    rides.push(ride); saveRides(rides); renderRides(); showResult('Fahrt gespeichert','success'); clearRideForm();
     requestNotificationPermission();
   }
 
-  // ---------- Notification permission ----------
-  function requestNotificationPermission() {
-    if (!('Notification' in window)) return;
-    if (Notification.permission === 'default') Notification.requestPermission().then(p => {
-      console.log('Notification permission:', p);
-    });
+  function clearRideForm(){
+    document.getElementById('rideTitle').value=''; document.getElementById('rideOrigin').value=''; delete document.getElementById('rideOrigin').dataset.lat; delete document.getElementById('rideOrigin').dataset.lng;
+    document.getElementById('rideDestination').value=''; delete document.getElementById('rideDestination').dataset.lat; delete document.getElementById('rideDestination').dataset.lng;
+    document.getElementById('rideTime').value='07:30'; document.getElementById('rideRepeat').value='daily'; document.getElementById('rideWindow').value='30'; document.getElementById('rideRainLevel').value='0.2';
+    delete document.getElementById('ridesList').dataset.editId;
   }
 
-  // ---------- Notification check logic (runs periodically) ----------
-  async function checkAllRidesForNotifications(){
-    const rides = loadRidesFromStorage();
-    if (!rides || !rides.length) return;
+  // Notification permission helper
+  function requestNotificationPermission(){
+    document.getElementById('notifyPermissionBtn').onclick = ()=> {
+      if (!('Notification' in window)) return alert('Notifications nicht unterstützt');
+      Notification.requestPermission().then(p=> alert('Permission: ' + p));
+    };
+    if ('Notification' in window && Notification.permission==='default') { /* no-op */ }
+  }
+
+  // Notification logic: check all rides every 10 minutes
+  async function checkNotificationsForRides(){
+    const rides = loadRides();
+    if (!rides.length) return;
     const now = new Date();
-
-    for (const ride of rides) {
-      if (!ride.enabled) continue;
-      // compute next target date for ride.time
-      const [h,m] = (ride.time||'07:30').split(':').map(Number);
+    for (const r of rides){
+      if (!r.enabled) continue;
+      // compute next target occurrence
+      const [h,m] = (r.time || '07:30').split(':').map(Number);
       let target = new Date(now);
-      target.setHours(h, m, 0, 0);
-      // if target is earlier than now, and repeat daily => next day
-      if (target <= now) {
-        if (ride.repeat === 'daily') target.setDate(target.getDate() + 1);
-        else {
-          // one-time ride in past -> skip
-          continue;
-        }
+      target.setHours(h,m,0,0);
+      if (target <= now){
+        if (r.repeat==='daily') target.setDate(target.getDate()+1);
+        else continue;
       }
-      // If we've already notified for that target date, skip
-      const targetDateStr = target.toISOString().slice(0,10) + '_' + ride.time; // unique key per date/time
-      if (ride.notifiedFor === targetDateStr) continue;
+      const diffMin = (target - now)/60000;
+      // only check if target is roughly within next 2 hours
+      if (diffMin > 120 || diffMin < 30) continue; // only when between 30 and 120 minutes
+      // if already notified for that date, skip
+      const key = target.toISOString().slice(0,10) + '_' + r.time;
+      if (r.notifiedFor === key) continue;
 
-      const diffMs = target - now;
-      const diffMin = diffMs / 60000;
-
-      // We want to notify roughly 60 minutes before; with 10-min polling it's ok to accept a small window
-      // We'll trigger if diffMin is between 50 and 70 minutes (approx 1 hour), or if it is <60 and >0 and we haven't notified yet and it's the last chance.
-      if (diffMin > 70 || diffMin <= 0) continue;
-
-      // compute weather for destination (if destination coords available)
-      const destLat = parseFloat(ride.destinationLat);
-      const destLng = parseFloat(ride.destinationLng);
-      if (isNaN(destLat) || isNaN(destLng)) continue;
-
+      // get weather for destination
       try {
-        const weatherData = await getWeatherForecast(destLat, destLng);
-        // compute average precipitation in window around target: +-30 min (or adapt if step larger)
-        const step = weatherData.stepMinutes || 1;
-        const times = weatherData.time.map(t => new Date(t));
-        const idx = findClosestIndex(weatherData.time, target);
-        // compute indexes taking care of boundaries
-        const minutesWindow = 60; // evaluate next hour window
-        const halfSteps = Math.floor((minutesWindow/step)/2);
-        const startIdx = Math.max(0, idx - halfSteps);
-        const endIdx = Math.min(weatherData.precipitation.length-1, idx + halfSteps);
-        const slice = weatherData.precipitation.slice(startIdx, endIdx+1);
-        const avgPrecip = average(slice);
-
-        // decide using ride.rainLevel threshold
-        if (avgPrecip > (ride.rainLevel || 0.2)) {
-          // We should send a notification: compute suggestion when to leave to stay dry
-          // For that we need route duration between origin and destination
-          let durationSeconds = 0;
-          try {
-            durationSeconds = await computeRouteDuration(ride.originLat, ride.originLng, ride.destinationLat, ride.destinationLng);
-          } catch(e) {
-            console.warn('Route duration failed, using 0s fallback', e);
-            durationSeconds = 0;
-          }
-          // Use calculateSafeDeparture-like logic to find next dry window and departure time
-          const safe = calculateSafeDepartureForNotification(durationSeconds, weatherData, ride.window, ride.rainLevel);
-          // send notification
-          sendRideNotification(ride, target, avgPrecip, safe);
-          // mark as notified for this target date
-          ride.notifiedFor = targetDateStr;
-          // persist
-          const all = loadRidesFromStorage();
-          const rIndex = all.findIndex(x=>x.id===ride.id);
-          if (rIndex !== -1) { all[rIndex] = ride; saveRidesToStorage(all); }
+        const lat = parseFloat(r.destinationLat);
+        const lng = parseFloat(r.destinationLng);
+        if (isNaN(lat) || isNaN(lng)) continue;
+        const weather = await getWeatherForecast(lat, lng);
+        // compute avg precipitation for window around target (±30min or use hour)
+        const step = weather.stepMinutes || 1;
+        const times = weather.time.map(t => new Date(t));
+        // find closest index
+        let bestIdx = 0; let bestDiff = 1e12;
+        for (let i=0;i<times.length;i++){ const d = Math.abs(times[i]-target); if (d<bestDiff){bestDiff=d; bestIdx=i;} }
+        const halfSteps = Math.floor((60/step)/2); // evaluate ~60 min window
+        const s = Math.max(0, bestIdx-halfSteps); const e = Math.min(weather.precipitation.length-1, bestIdx+halfSteps);
+        const slice = weather.precipitation.slice(s,e+1);
+        const meanPrecip = avg(slice);
+        if (meanPrecip > (r.rainLevel || 0.2) && Notification.permission === 'granted'){
+          // compute suggestion departure using route duration
+          let durationSec = 0;
+          try { durationSec = await getRouteDuration(r.originLat, r.originLng, r.destinationLat, r.destinationLng); } catch(e){}
+          const suggestion = calculateSafeDeparture(durationSec, weather, r.window, r.rainLevel);
+          let body = `Regen um ${r.time} erwartet (Ø ${meanPrecip.toFixed(2)} mm/h).`;
+          if (suggestion && suggestion.departureTime){
+            const dep = suggestion.departureTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+            body += ` Vorschlag: Starte um ${dep}.`;
+          } else body += ' Keine bessere Lücke gefunden.';
+          new Notification(`🌧 DryRide: ${r.title || 'Fahrt'}`, { body });
+          // mark as notified
+          r.notifiedFor = key;
+          const all = loadRides(); const idx = all.findIndex(x=>x.id===r.id); if (idx!==-1){ all[idx] = r; saveRides(all); renderRides(); }
         }
-
-      } catch(e) {
-        console.error('Notification-check Fehler', e);
-      }
-
-    } // end for rides
-  }
-
-  // compute route duration using Google DirectionsService (returns seconds)
-  function computeRouteDuration(originLat, originLng, destLat, destLng) {
-    return new Promise((resolve, reject) => {
-      try {
-        if (!window.google || !google.maps) return reject(new Error('Google Maps nicht geladen'));
-        const ds = new google.maps.DirectionsService();
-        ds.route({
-          origin: { lat: parseFloat(originLat), lng: parseFloat(originLng) },
-          destination: { lat: parseFloat(destLat), lng: parseFloat(destLng) },
-          travelMode: google.maps.TravelMode.BICYCLING
-        }, (res, status) => {
-          if (status === 'OK' && res.routes && res.routes.length) {
-            const duration = res.routes[0].legs[0].duration.value;
-            resolve(duration);
-          } else {
-            reject(new Error('Directions fehlgeschlagen: ' + status));
-          }
-        });
-      } catch(e){
-        reject(e);
-      }
-    });
-  }
-
-  // create and show notification
-  function sendRideNotification(ride, targetDate, avgPrecip, safeObj) {
-    if (!("Notification" in window) || Notification.permission !== 'granted') return;
-    // build message
-    let title = `🌧 DryRide-Warnung: ${ride.title || 'Fahrt'}`;
-    const targetTimeStr = targetDate.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-    let body = `Regen um ${targetTimeStr} erwartet (Ø ${avgPrecip.toFixed(2)} mm/h).`;
-    if (safeObj && safeObj.departureTime) {
-      const dep = safeObj.departureTime;
-      const depStr = dep.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-      body += ` Vorschlag: Starte um ${depStr} (Fahrtzeit ${Math.ceil(safeObj.durationSeconds/60)} Min).`;
-    } else {
-      body += ' Prüfe Alternativen.';
+      } catch(e){ console.warn('Notification check failed', e); }
     }
-    new Notification(title, { body });
   }
 
-  // helper: similar logic to earlier calculateSafeDeparture but returns object for notifications
-  function calculateSafeDepartureForNotification(durationSeconds, weatherData, desiredMinutes, maxPrecip) {
-    // weatherData contains time[] & precipitation[] (stepMinutes maybe >1)
+  // calculate safe departure used in notifications (returns startTime + departureTime)
+  function calculateSafeDeparture(durationSeconds, weatherData, desiredMinutes, maxPrecip){
     const now = new Date();
     const times = weatherData.time;
     const precip = weatherData.precipitation;
     const step = weatherData.stepMinutes || 1;
-    const stepsNeeded = Math.ceil(desiredMinutes / step);
-    // search for next window
-    for (let i = 0; i <= precip.length - stepsNeeded; i++) {
-      const windowVals = precip.slice(i, i + stepsNeeded);
-      const mean = average(windowVals);
-      const t = new Date(times[i]);
-      if (mean <= maxPrecip && t > now) {
-        const startDryTime = t;
-        const departureTime = new Date(startDryTime.getTime() - (durationSeconds + 300)*1000);
-        return { startDryTime, departureTime, durationSeconds, mean };
+    const stepsNeeded = Math.ceil(desiredMinutes/step);
+    for (let i=0;i<=precip.length-stepsNeeded;i++){
+      const vals = precip.slice(i, i+stepsNeeded);
+      const mean = avg(vals);
+      const startT = new Date(times[i]);
+      if (mean <= maxPrecip && startT > now){
+        const departureTime = new Date(startT.getTime() - (durationSeconds + 300)*1000);
+        return { startTime: startT, departureTime, mean };
       }
     }
     return null;
   }
 
-  // ---------- calculateSafeRide: single-run calculation (UI) ----------
-  async function calculateSafeRide(){
-    showResult('⏳ Lade Daten...', 'loading');
-    try {
-      // load addresses from storage / form
-      let home = loadHomeFromStorage();
-      let start = loadStartFromStorage();
-      // fallback to typed values
-      if (!home && document.getElementById('homeAddress').value.trim()) {
-        try { home = await geocodeAddressJS(document.getElementById('homeAddress').value.trim()); saveHomeToStorage(home); }
-        catch(e){ console.warn('home geocode failed', e); }
-      }
-      if (!start && document.getElementById('startAddress').value.trim()) {
-        try { start = await geocodeAddressJS(document.getElementById('startAddress').value.trim()); saveStartToStorage(start); }
-        catch(e){ console.warn('start geocode failed', e); }
-      }
-
-      if (!home) return showResult('Bitte Hausadresse speichern.', 'error');
-
-      // choose start lat/lng
-      let startLat, startLng;
-      if (document.getElementById('startAddress').value.trim()) {
-        const ds = document.getElementById('startAddress').dataset;
-        if (ds.lat && ds.lng) { startLat = ds.lat; startLng = ds.lng; }
-        else if (start) { startLat = start.lat; startLng = start.lng; }
-        else {
-          const pos = await getCurrentLocation();
-          startLat = pos.lat; startLng = pos.lng;
-        }
-      } else {
-        // use GPS if no start address
-        try {
-          const pos = await getCurrentLocation();
-          startLat = pos.lat; startLng = pos.lng;
-        } catch(e) {
-          return showResult('Kein Startpunkt (keine Von-Adresse & GPS nicht verfügbar).', 'error');
-        }
-      }
-
-      const desiredMinutes = parseInt(document.getElementById('dryWindow').value);
-      const maxPrecip = parseFloat(document.getElementById('rainLevel').value);
-
-      showResult('📍 Hole Route...', 'loading');
-      const durationSeconds = await computeRouteDuration(startLat, startLng, home.lat, home.lng);
-
-      showResult('🌦 Hole Wetterdaten...', 'loading');
-      const weatherData = await getWeatherForecast(startLat, startLng);
-
-      const safe = calculateSafeDepartureForNotification(durationSeconds, weatherData, desiredMinutes, maxPrecip);
-      if (!safe) {
-        showResult(`☔️ In den nächsten Stunden kein ${desiredMinutes}-Minuten-Fenster ohne starken Niederschlag gefunden.`, 'error');
-      } else {
-        const startStr = safe.startDryTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-        const depStr = safe.departureTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-        const waitMin = Math.max(0, Math.round((safe.departureTime - new Date())/60000));
-        const driveMin = Math.ceil(durationSeconds/60);
-        showResult(`🌤 Nächstes trockenes Fenster ab ${startStr}. Fahre ${waitMin===0 ? 'jetzt' : 'in ' + waitMin + ' Min'} los (ab ${depStr}) — Fahrtzeit ${driveMin} Min.`, 'success');
-        startCountdown(safe.departureTime);
-      }
-
-    } catch(e) {
-      console.error(e);
-      showResult('Fehler: ' + e.message, 'error');
-    }
+  // periodic init
+  function startPeriodicChecks(){
+    checkNotificationsForRides().catch(e=>console.warn(e));
+    setInterval(()=> checkNotificationsForRides().catch(e=>console.warn(e)), 10*60*1000);
   }
 
-  // ---------- countdown (re-use) ----------
-  let countdownTimer = null;
-  function startCountdown(departureTime) {
-    if (countdownTimer) clearInterval(countdownTimer);
-    if (!departureTime) return;
-    function update() {
-      const diff = Math.max(0, Math.round((departureTime - new Date())/60000));
-      const el = document.getElementById('result');
-      el.innerHTML = `🚲 Abfahrt in ${diff} Minuten`;
-      el.className = 'loading';
-      if (diff <= 0) { clearInterval(countdownTimer); el.className='success'; }
-    }
-    update();
-    countdownTimer = setInterval(update, 60000);
-  }
+  // init UI + autocomplete
+  document.addEventListener('DOMContentLoaded', ()=> {
+    whenMapsReady(()=> {
+      acHome = attachAutocomplete(document.getElementById('homeAddress'));
+      acStart = attachAutocomplete(document.getElementById('startAddress'));
+      acRideOrigin = attachAutocomplete(document.getElementById('rideOrigin'));
+      acRideDest = attachAutocomplete(document.getElementById('rideDestination'));
+      // load saved home/start into inputs
+      const home = JSON.parse(localStorage.getItem(KEY_HOME) || 'null');
+      if (home) { document.getElementById('homeAddress').value = home.address; document.getElementById('homeAddress').dataset.lat = home.lat; document.getElementById('homeAddress').dataset.lng = home.lng; }
+      const start = JSON.parse(localStorage.getItem(KEY_START) || 'null');
+      if (start) { document.getElementById('startAddress').value = start.address; document.getElementById('startAddress').dataset.lat = start.lat; document.getElementById('startAddress').dataset.lng = start.lng; }
+    });
 
-  // ---------- check loop ----------
-  // run immediately on load and every 10 minutes
-  async function periodicCheckInit() {
-    try { await checkAllRidesForNotifications(); } catch(e){ console.warn(e); }
-    setInterval(async ()=> {
-      try { await checkAllRidesForNotifications(); } catch(e) { console.warn(e); }
-    }, 10*60*1000);
-  }
+    document.getElementById('saveHomeBtn').onclick = saveHomeAddress;
+    document.getElementById('saveStartBtn').onclick = saveStartAddress;
 
-  // ---------- utility: display result ----------
-  function showResult(message, type) {
-    const r = document.getElementById('result');
-    r.innerHTML = message;
-    r.className = type || '';
-  }
-
-  // ---------- Document ready ----------
-  document.addEventListener('DOMContentLoaded', () => {
-    initAutocompleteAll();
-    renderRidesList();
-    periodicCheckInit();
+    renderRides();
+    startPeriodicChecks();
     requestNotificationPermission();
-
-    // load home/start into fields (if saved)
-    const home = loadHomeFromStorage();
-    if (home) {
-      document.getElementById('homeAddress').value = home.address;
-    }
-    const start = loadStartFromStorage();
-    if (start) {
-      document.getElementById('startAddress').value = start.address;
-    }
   });
 
   </script>
 </body>
 </html>
+
 
