@@ -296,8 +296,10 @@
         const precip = await getPrecipAtTime(loc.lat(), loc.lng(), new Date());
         if (precip !== null) {
           const limit = parseFloat(document.getElementById('rainLevel').value);
-          const text = precip <= limit ? `🚲 Jetzt losfahren! Regen ${precip.toFixed(1)} mm/h` : `🌧 Aktueller Regen: ${precip.toFixed(1)} mm/h — ggf. warten`;
+          const text = precip <= limit ? `🚲 Jetzt losfahren! Regen ${precip.toFixed(1)} mm/h` : `🌧 Aktueller Regen: ${precip.toFixed(1)} mm/h — nächstes trockenes Zeitfenster prüfen`;
           showResult(text);
+        } else {
+          showResult('Suche...', 'muted');
         }
       }
     });
@@ -330,7 +332,7 @@
           const loc = results[0].geometry.location;
           const p = await getPrecipAtTime(loc.lat(), loc.lng(), new Date());
           const elp = document.getElementById(`precip_${r.id}`);
-          if (elp) elp.innerHTML = p !== null ? `🌦 Aktueller Regen: ${p.toFixed(1)} mm/h` : '🌦 Regendaten nicht verfügbar';
+          if (elp) elp.innerHTML = p !== null ? `🌦 Aktueller Regen: ${p.toFixed(1)} mm/h` : '🌦 Suche...';
         }
       });
     }
@@ -398,14 +400,14 @@
           });
 
           const now = new Date();
-          const endTime = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+          const endTime = new Date(now.getTime() + 4 * 60 * 60 * 1000); // 4 Stunden
           const limit = parseFloat(document.getElementById('rainLevel').value);
           const dryWindow = parseInt(document.getElementById('dryWindow').value) * 60 * 1000;
           console.log('Einstellungen:', {
             rainLevel: limit + ' mm/h',
             dryWindow: (dryWindow / 60000) + ' Minuten',
             Startzeit: now.toLocaleString('de-DE'),
-            Endzeit_24h: endTime.toLocaleString('de-DE')
+            Endzeit_4h: endTime.toLocaleString('de-DE')
           });
 
           // Teile die Route in 5-Minuten-Abschnitte
@@ -433,13 +435,13 @@
           let firstRainPoint = null;
           for (const point of points) {
             if (point.time > endTime) {
-              console.log('Zeitpunkt überschreitet 24-Stunden-Grenze:', point.time.toLocaleString('de-DE'));
+              console.log('Zeitpunkt überschreitet 4-Stunden-Grenze:', point.time.toLocaleString('de-DE'));
               break;
             }
             const precip = await getPrecipAtTime(point.lat, point.lng, point.time);
             if (precip === null) { 
-              showResult('Wetterdaten nicht verfügbar', 'danger'); 
-              console.error('Wetterdaten nicht verfügbar für:', { lat: point.lat, lng: point.lng, time: point.time.toLocaleString('de-DE') });
+              showResult('Suche...', 'muted'); 
+              console.log('Suche Wetterdaten für:', { lat: point.lat, lng: point.lng, time: point.time.toLocaleString('de-DE') });
               console.groupEnd();
               console.groupEnd();
               return; 
@@ -459,7 +461,7 @@
 
           if (!firstRainTime) {
             showResult('🚲 Von jetzt bis zum Ziel sicher trocken', 'success');
-            console.log('Ergebnis: Route ist sicher trocken für die nächsten 24 Stunden');
+            console.log('Ergebnis: Route ist sicher trocken für die nächsten 4 Stunden');
             console.groupEnd();
             return;
           }
@@ -486,10 +488,10 @@
           // Finde die erste Zeit, zu der die gesamte Route trocken ist
           console.group('Suche nach trockenem Zeitfenster');
           let firstDryTime = null;
-          for (let offset = 0; offset < 24 * 60 * 60 * 1000; offset += 3600 * 1000) {
+          for (let offset = 0; offset < 4 * 60 * 60 * 1000; offset += 3600 * 1000) { // 4 Stunden
             const startTime = new Date(now.getTime() + offset);
             if (startTime > endTime) {
-              console.log('Startzeit überschreitet 24-Stunden-Grenze:', startTime.toLocaleString('de-DE'));
+              console.log('Startzeit überschreitet 4-Stunden-Grenze:', startTime.toLocaleString('de-DE'));
               break;
             }
             let isDry = true;
@@ -500,13 +502,13 @@
               const point = path[index];
               const timeAtPoint = new Date(startTime.getTime() + progress * duration * 1000);
               if (timeAtPoint > endTime) {
-                console.log('Zeitpunkt überschreitet 24-Stunden-Grenze:', timeAtPoint.toLocaleString('de-DE'));
+                console.log('Zeitpunkt überschreitet 4-Stunden-Grenze:', timeAtPoint.toLocaleString('de-DE'));
                 break;
               }
               const precip = await getPrecipAtTime(point.lat, point.lng, timeAtPoint);
               if (precip === null) { 
-                showResult('Wetterdaten nicht verfügbar', 'danger'); 
-                console.error('Wetterdaten nicht verfügbar für:', { lat: point.lat(), lng: point.lng(), time: timeAtPoint.toLocaleString('de-DE') });
+                showResult('Suche...', 'muted'); 
+                console.log('Suche Wetterdaten für:', { lat: point.lat(), lng: point.lng(), time: timeAtPoint.toLocaleString('de-DE') });
                 console.groupEnd();
                 console.groupEnd();
                 console.groupEnd();
@@ -532,15 +534,15 @@
 
           if (firstDryTime) {
             const timeStr = firstDryTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-            showResult(`🌧 Regen auf der Strecke um ${firstRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} — warten bis ${timeStr}, dann trocken`, 'muted');
+            showResult(`🌧 Regen auf der Strecke um ${firstRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} — nächstes trockenes Zeitfenster: ${timeStr}`, 'muted');
             console.log('Ergebnis:', {
               Erster_Regen: firstRainTime.toLocaleString('de-DE'),
               Erste_Trockene_Zeit: firstDryTime.toLocaleString('de-DE'),
-              Nachricht: `Regen um ${firstRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} — warten bis ${timeStr}`
+              Nachricht: `Regen um ${firstRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} — nächstes trockenes Zeitfenster: ${timeStr}`
             });
           } else {
-            showResult('🌧 Kein trockenes Fenster innerhalb der nächsten 24 Stunden', 'muted');
-            console.log('Ergebnis: Kein trockenes Fenster innerhalb der nächsten 24 Stunden');
+            showResult('🌧 Kein trockenes Zeitfenster innerhalb der nächsten 4 Stunden', 'muted');
+            console.log('Ergebnis: Kein trockenes Zeitfenster innerhalb der nächsten 4 Stunden');
           }
           console.groupEnd();
         });
