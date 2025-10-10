@@ -99,7 +99,7 @@
           <input id="homeAddress" type="text" placeholder="z. B. Musterstraße 1, 10115 Berlin" autocomplete="off">
         </div>
         <div class="field">
-          <label class="muted">Von-Adresse (optional)</label>
+          <label class="muted">Von-Adresse</label>
           <input id="startAddress" type="text" placeholder="z. B. Bahnhofstraße 5" autocomplete="off">
         </div>
       </div>
@@ -184,7 +184,7 @@
   </div>
 
   <script async
-    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCfmA_2wFMG2eXCJF0stxziBnM4CVNpoB0&libraries=places">
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCfmA_2wFMG2eXCJF0stxziBnM4CVNpoB0&libraries=places,directions">
   </script>
 
   <script>
@@ -200,11 +200,11 @@
   }
 
   function whenMapsReady(cb){
-    if (window.google && google.maps && google.maps.places) return cb();
-    setTimeout(()=>whenMapsReady(cb), 200);
+    if (window.google && google.maps && google.maps.places && google.maps.DirectionsService) return cb();
+    setTimeout(() => whenMapsReady(cb), 200);
   }
 
-  whenMapsReady(()=>{
+  whenMapsReady(() => {
     acHome = new google.maps.places.Autocomplete(document.getElementById('homeAddress'));
     acStart = new google.maps.places.Autocomplete(document.getElementById('startAddress'));
     acRideOrigin = new google.maps.places.Autocomplete(document.getElementById('rideOrigin'));
@@ -229,13 +229,13 @@
   function saveRides(r){ localStorage.setItem(KEY_RIDES, JSON.stringify(r)); renderRides(); }
 
   function clearRideForm(){
-    document.getElementById('rideTitle').value='';
-    document.getElementById('rideOrigin').value='';
-    document.getElementById('rideDestination').value='';
-    document.getElementById('rideTime').value='07:30';
-    document.getElementById('rideRepeat').value='daily';
-    document.getElementById('rideWindow').value='30';
-    document.getElementById('rideRainLevel').value='0';
+    document.getElementById('rideTitle').value = '';
+    document.getElementById('rideOrigin').value = '';
+    document.getElementById('rideDestination').value = '';
+    document.getElementById('rideTime').value = '07:30';
+    document.getElementById('rideRepeat').value = 'daily';
+    document.getElementById('rideWindow').value = '30';
+    document.getElementById('rideRainLevel').value = '0';
   }
 
   function saveRide(){
@@ -258,168 +258,194 @@
   }
 
   function deleteRide(id){
-    const rides = loadRides().filter(r=>r.id!==id);
+    const rides = loadRides().filter(r => r.id !== id);
     saveRides(rides);
   }
 
   async function getWeatherForecast(lat, lng){
-    // Open-Meteo API 1h step, 1d forecast
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=precipitation&forecast_days=1`;
     const res = await fetch(url);
     const data = await res.json();
     const time = data.hourly.time;
     const precipitation = data.hourly.precipitation;
-    return {time, precipitation};
+    return { time, precipitation };
   }
 
-  async function getCurrentPrecip(lat, lng){
-    try{
+  async function getPrecipAtTime(lat, lng, forecastTime){
+    try {
       const weather = await getWeatherForecast(lat, lng);
-      const now = new Date();
-      let closestIdx = 0, minDiff=1e12;
-      weather.time.forEach((t,i)=>{
-        const diff = Math.abs(new Date(t)-now);
-        if(diff<minDiff){ minDiff=diff; closestIdx=i; }
+      let closestIdx = 0, minDiff = 1e12;
+      weather.time.forEach((t, i) => {
+        const diff = Math.abs(new Date(t) - forecastTime);
+        if (diff < minDiff) { minDiff = diff; closestIdx = i; }
       });
       return weather.precipitation[closestIdx];
-    }catch(e){ return null; }
+    } catch (e) {
+      return null;
+    }
   }
 
   async function updateCurrentPrecipDisplay(){
     const startEl = document.getElementById('startAddress');
     const startVal = startEl.value;
-    if(!startVal) return;
+    if (!startVal) return;
     const geocoder = new google.maps.Geocoder();
-    geocoder.geocode({address:startVal}, async function(results, status){
-      if(status==='OK' && results[0]){
+    geocoder.geocode({ address: startVal }, async function(results, status) {
+      if (status === 'OK' && results[0]) {
         const loc = results[0].geometry.location;
-        const precip = await getCurrentPrecip(loc.lat(), loc.lng());
-        if(precip!==null){
+        const precip = await getPrecipAtTime(loc.lat(), loc.lng(), new Date());
+        if (precip !== null) {
           const limit = parseFloat(document.getElementById('rainLevel').value);
-          const text = precip<=limit ? `🚲 Jetzt losfahren! Regen ${precip.toFixed(1)} mm/h` : `🌧 Aktueller Regen: ${precip.toFixed(1)} mm/h — ggf. warten`;
+          const text = precip <= limit ? `🚲 Jetzt losfahren! Regen ${precip.toFixed(1)} mm/h` : `🌧 Aktueller Regen: ${precip.toFixed(1)} mm/h — ggf. warten`;
           showResult(text);
         }
       }
     });
   }
-  setInterval(updateCurrentPrecipDisplay, 60*1000);
+  setInterval(updateCurrentPrecipDisplay, 60 * 1000);
   updateCurrentPrecipDisplay();
 
   async function renderRides(){
     const list = document.getElementById('ridesList');
     const rides = loadRides();
-    list.innerHTML = rides.length? '':'<div class="muted">Keine Fahrten</div>';
+    list.innerHTML = rides.length ? '' : '<div class="muted">Keine Fahrten</div>';
     const geocoder = new google.maps.Geocoder();
-    for(const r of rides){
-      const el = document.createElement('div'); el.className='ride';
-      const left = document.createElement('div'); left.className='meta';
+    for (const r of rides) {
+      const el = document.createElement('div'); el.className = 'ride';
+      const left = document.createElement('div'); left.className = 'meta';
       left.innerHTML = `<strong>${r.title}</strong>
         <div class="sub">${r.originAddress} → ${r.destinationAddress}</div>
         <div class="sub">${r.time} · ${r.repeat}</div>
         <div class="sub" id="precip_${r.id}">🌦 Laden…</div>`;
       const right = document.createElement('div');
-      const toggle = document.createElement('button'); toggle.className='action-btn '+(r.enabled?'toggle-enabled':'toggle-disabled'); toggle.textContent=r.enabled?'Aktiv':'Inaktiv';
-      toggle.onclick=()=>{ r.enabled=!r.enabled; saveRides(loadRides().map(x=>x.id===r.id? r:x)); renderRides(); };
-      const edit = document.createElement('button'); edit.className='action-btn'; edit.textContent='Bearbeiten'; edit.onclick=()=>loadRideIntoForm(r.id);
-      const del = document.createElement('button'); del.className='action-btn secondary'; del.textContent='Löschen'; del.onclick=()=>deleteRide(r.id);
+      const toggle = document.createElement('button'); toggle.className = 'action-btn ' + (r.enabled ? 'toggle-enabled' : 'toggle-disabled'); toggle.textContent = r.enabled ? 'Aktiv' : 'Inaktiv';
+      toggle.onclick = () => { r.enabled = !r.enabled; saveRides(loadRides().map(x => x.id === r.id ? r : x)); renderRides(); };
+      const edit = document.createElement('button'); edit.className = 'action-btn'; edit.textContent = 'Bearbeiten'; edit.onclick = () => loadRideIntoForm(r.id);
+      const del = document.createElement('button'); del.className = 'action-btn secondary'; del.textContent = 'Löschen'; del.onclick = () => deleteRide(r.id);
       right.appendChild(toggle); right.appendChild(edit); right.appendChild(del);
       el.appendChild(left); el.appendChild(right); list.appendChild(el);
 
-      // Fetch aktueller Regen
-      geocoder.geocode({address:r.destinationAddress}, async function(results,status){
-        if(status==='OK' && results[0]){
+      geocoder.geocode({ address: r.destinationAddress }, async function(results, status) {
+        if (status === 'OK' && results[0]) {
           const loc = results[0].geometry.location;
-          const p = await getCurrentPrecip(loc.lat(), loc.lng());
+          const p = await getPrecipAtTime(loc.lat(), loc.lng(), new Date());
           const elp = document.getElementById(`precip_${r.id}`);
-          if(elp) elp.innerHTML = p!==null ? `🌦 Aktueller Regen: ${p.toFixed(1)} mm/h` : '🌦 Regendaten nicht verfügbar';
+          if (elp) elp.innerHTML = p !== null ? `🌦 Aktueller Regen: ${p.toFixed(1)} mm/h` : '🌦 Regendaten nicht verfügbar';
         }
       });
     }
   }
 
   function loadRideIntoForm(id){
-    const r = loadRides().find(x=>x.id===id); if(!r) return;
-    document.getElementById('rideTitle').value=r.title;
-    document.getElementById('rideOrigin').value=r.originAddress;
-    document.getElementById('rideDestination').value=r.destinationAddress;
-    document.getElementById('rideTime').value=r.time;
-    document.getElementById('rideRepeat').value=r.repeat;
-    document.getElementById('rideWindow').value=r.window;
-    document.getElementById('rideRainLevel').value=r.maxRain;
+    const r = loadRides().find(x => x.id === id); if (!r) return;
+    document.getElementById('rideTitle').value = r.title;
+    document.getElementById('rideOrigin').value = r.originAddress;
+    document.getElementById('rideDestination').value = r.destinationAddress;
+    document.getElementById('rideTime').value = r.time;
+    document.getElementById('rideRepeat').value = r.repeat;
+    document.getElementById('rideWindow').value = r.window;
+    document.getElementById('rideRainLevel').value = r.maxRain;
   }
 
-  function escapeHtml(text){ const div=document.createElement('div'); div.textContent=text; return div.innerHTML; }
+  function escapeHtml(text){ const div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
 
   async function calculateSafeRide(){
     showResult('Berechne…');
     const startVal = document.getElementById('startAddress').value;
     const destVal = document.getElementById('homeAddress').value;
-    if(!startVal || !destVal){ showResult('Bitte Start und Ziel eingeben','danger'); return; }
+    if (!startVal || !destVal) { showResult('Bitte Start und Ziel eingeben', 'danger'); return; }
     const geocoder = new google.maps.Geocoder();
-    geocoder.geocode({address:startVal}, async function(results1, status1){
-      if(status1!=='OK' || !results1[0]){ showResult('Startadresse nicht gefunden','danger'); return; }
+    geocoder.geocode({ address: startVal }, async function(results1, status1) {
+      if (status1 !== 'OK' || !results1[0]) { showResult('Startadresse nicht gefunden', 'danger'); return; }
       const loc1 = results1[0].geometry.location;
-      geocoder.geocode({address:destVal}, async function(results2, status2){
-        if(status2!=='OK' || !results2[0]){ showResult('Zieladresse nicht gefunden','danger'); return; }
+      geocoder.geocode({ address: destVal }, async function(results2, status2) {
+        if (status2 !== 'OK' || !results2[0]) { showResult('Zieladresse nicht gefunden', 'danger'); return; }
         const loc2 = results2[0].geometry.location;
-        const weather = await getWeatherForecast(loc2.lat(), loc2.lng());
-        if(!weather || !weather.time || !weather.precipitation){
-          showResult('Wetterdaten nicht verfügbar','danger'); return;
-        }
-        const limit = parseFloat(document.getElementById('rainLevel').value);
-        const dryWindow = parseInt(document.getElementById('dryWindow').value) * 60 * 1000; // Convert to milliseconds
-        const now = new Date();
-        const endTime = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours from now
+        const directionsService = new google.maps.DirectionsService();
+        directionsService.route({
+          origin: startVal,
+          destination: destVal,
+          travelMode: google.maps.TravelMode.DRIVING
+        }, async (result, status) => {
+          if (status !== 'OK') { showResult('Route nicht gefunden', 'danger'); return; }
+          const duration = result.routes[0].legs[0].duration.value; // in Sekunden
+          const path = result.routes[0].overview_path;
+          const now = new Date();
+          const endTime = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+          const limit = parseFloat(document.getElementById('rainLevel').value);
+          const dryWindow = parseInt(document.getElementById('dryWindow').value) * 60 * 1000;
 
-        // Check current precipitation
-        const currentPrecip = await getCurrentPrecip(loc2.lat(), loc2.lng());
-        if(currentPrecip === null){
-          showResult('Aktuelle Wetterdaten nicht verfügbar','danger'); return;
-        }
-        if(currentPrecip > limit){
-          // Look for the first time within 24 hours where precipitation is <= limit
-          let firstDryTime = null;
-          for(let i = 0; i < weather.time.length; i++){
-            const forecastTime = new Date(weather.time[i]);
-            if(forecastTime > endTime) break;
-            if(weather.precipitation[i] <= limit){
-              firstDryTime = forecastTime;
+          // Teile die Route in 5-Minuten-Abschnitte
+          const interval = 5 * 60; // 5 Minuten in Sekunden
+          const numIntervals = Math.ceil(duration / interval);
+          const points = [];
+          for (let i = 0; i <= numIntervals; i++) {
+            const progress = Math.min(i * interval / duration, 1);
+            const index = Math.floor(progress * (path.length - 1));
+            const point = path[index];
+            const timeAtPoint = new Date(now.getTime() + progress * duration * 1000);
+            points.push({ lat: point.lat(), lng: point.lng(), time: timeAtPoint });
+          }
+
+          // Prüfe Niederschlag für jeden Punkt
+          let firstRainTime = null;
+          let firstRainPoint = null;
+          for (const point of points) {
+            if (point.time > endTime) break;
+            const precip = await getPrecipAtTime(point.lat, point.lng, point.time);
+            if (precip === null) { showResult('Wetterdaten nicht verfügbar', 'danger'); return; }
+            if (precip > limit) {
+              firstRainTime = point.time;
+              firstRainPoint = point;
               break;
             }
           }
-          if(firstDryTime){
-            const timeStr = firstDryTime.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'});
-            showResult(`🌧 Aktueller Regen: ${currentPrecip.toFixed(1)} mm/h — warten bis ${timeStr}, dann trocken`,'muted');
+
+          if (!firstRainTime) {
+            showResult('🚲 Von jetzt bis zum Ziel sicher trocken', 'success');
+            return;
+          }
+
+          // Prüfe Trocken-Fenster
+          const windowEndTime = new Date(firstRainTime.getTime() - dryWindow);
+          if (windowEndTime > now) {
+            const timeStr = firstRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+            showResult(`🚲 Jetzt losfahren! Trocken bis ${timeStr}, danach Regen erwartet`, 'success');
+            return;
+          }
+
+          // Finde die erste Zeit, zu der die gesamte Route trocken ist
+          let firstDryTime = null;
+          for (let offset = 0; offset < 24 * 60 * 60 * 1000; offset += 3600 * 1000) { // Stunde für Stunde prüfen
+            const startTime = new Date(now.getTime() + offset);
+            if (startTime > endTime) break;
+            let isDry = true;
+            for (let i = 0; i <= numIntervals; i++) {
+              const progress = Math.min(i * interval / duration, 1);
+              const index = Math.floor(progress * (path.length - 1));
+              const point = path[index];
+              const timeAtPoint = new Date(startTime.getTime() + progress * duration * 1000);
+              if (timeAtPoint > endTime) break;
+              const precip = await getPrecipAtTime(point.lat, point.lng, timeAtPoint);
+              if (precip === null) { showResult('Wetterdaten nicht verfügbar', 'danger'); return; }
+              if (precip > limit) {
+                isDry = false;
+                break;
+              }
+            }
+            if (isDry) {
+              firstDryTime = startTime;
+              break;
+            }
+          }
+
+          if (firstDryTime) {
+            const timeStr = firstDryTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+            showResult(`🌧 Regen auf der Strecke um ${firstRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} — warten bis ${timeStr}, dann trocken`, 'muted');
           } else {
-            showResult('🌧 Kein trockenes Fenster innerhalb der nächsten 24 Stunden','muted');
+            showResult('🌧 Kein trockenes Fenster innerhalb der nächsten 24 Stunden', 'muted');
           }
-          return;
-        }
-
-        // If not raining, analyze forecast for the next 24 hours
-        let firstRainTime = null;
-        for(let i = 0; i < weather.time.length; i++){
-          const forecastTime = new Date(weather.time[i]);
-          if(forecastTime > endTime) break;
-          if(weather.precipitation[i] > limit){
-            firstRainTime = forecastTime;
-            break;
-          }
-        }
-
-        if(!firstRainTime){
-          showResult('🚲 Von jetzt bis in 24 Stunden sicher trocken','success'); return;
-        }
-
-        // Check if dryWindow is satisfied before the first rain
-        const windowEndTime = new Date(firstRainTime.getTime() - dryWindow);
-        if(windowEndTime > now){
-          const timeStr = firstRainTime.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'});
-          showResult(`🚲 Jetzt losfahren! Trocken bis ${timeStr}, danach Regen erwartet`,'success');
-        } else {
-          const timeStr = firstRainTime.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'});
-          showResult(`🌧 Trocken-Fenster (${dryWindow/60000} Min) nicht erfüllt. Regen ab ${timeStr}`,'muted');
-        }
+        });
       });
     });
   }
