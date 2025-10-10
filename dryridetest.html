@@ -369,11 +369,7 @@
         const limit = parseFloat(document.getElementById('rainLevel').value);
         const dryWindow = parseInt(document.getElementById('dryWindow').value) * 60 * 1000; // Convert to milliseconds
         const now = new Date();
-        const tomorrow8am = new Date(now);
-        tomorrow8am.setHours(8, 0, 0, 0);
-        if(tomorrow8am < now) tomorrow8am.setDate(tomorrow8am.getDate() + 1);
-        const maxTime = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours from now
-        const endTime = new Date(Math.min(tomorrow8am.getTime(), maxTime.getTime()));
+        const endTime = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours from now
 
         // Check current precipitation
         const currentPrecip = await getCurrentPrecip(loc2.lat(), loc2.lng());
@@ -384,7 +380,7 @@
           showResult(`🌧 Aktueller Regen: ${currentPrecip.toFixed(1)} mm/h — bitte warten`,'muted'); return;
         }
 
-        // Analyze forecast for the next 24 hours or until tomorrow 8am
+        // Analyze forecast for the next 24 hours
         let firstRainTime = null;
         for(let i = 0; i < weather.time.length; i++){
           const forecastTime = new Date(weather.time[i]);
@@ -396,7 +392,7 @@
         }
 
         if(!firstRainTime){
-          showResult('🚲 Von jetzt bis morgen früh um 8 Uhr sicher trocken','success'); return;
+          showResult('🚲 Von jetzt bis in 24 Stunden sicher trocken','success'); return;
         }
 
         // Check if dryWindow is satisfied before the first rain
