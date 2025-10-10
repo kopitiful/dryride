@@ -91,47 +91,46 @@
       </div>
     </header>
 
-    <div class="panel" aria-live="polite">
-      <h2>Adressen & Einzelberechnung</h2>
-      <div class="form-row" style="margin-top:12px">
-        <div class="field">
-          <label class="muted">Hausadresse (Ziel)</label>
-          <input id="homeAddress" type="text" placeholder="z. B. Musterstraße 1, 10115 Berlin" autocomplete="off">
-        </div>
-        <div class="field">
-          <label class="muted">Von-Adresse (optional)</label>
-          <input id="startAddress" type="text" placeholder="z. B. Bahnhofstraße 5" autocomplete="off">
-        </div>
-      </div>
-
-      <div class="form-row">
-        <div class="field">
-          <label for="rainLevel">Akzeptierter Niederschlag:</label>
-          <select id="rainLevel">
-            <option value="0">Kein Niederschlag</option>
-            <option value="2" selected>Weniger als 2 mm/h</option>
-          </select>
-        </div>
-        <div class="field">
-          <label class="muted">Trocken-Fenster (Min)</label>
-          <select id="dryWindow">
-            <option value="15">15</option>
-            <option value="30" selected>30</option>
-            <option value="45">45</option>
-            <option value="60">60</option>
-          </select>
-        </div>
-      </div>
-
-      <div style="display:flex; gap:8px; margin-top:12px">
-        <button class="primary" onclick="calculateSafeRide()">Berechnen: Wann losfahren?</button>
-        <button class="action-btn secondary" id="saveHomeBtn">Haus speichern</button>
-        <button class="action-btn secondary" id="saveStartBtn">Von speichern</button>
-      </div>
-
-      <div id="result" class="muted">Ergebnis erscheint hier.</div>
+   <div class="panel" aria-live="polite">
+  <h2>Adressen & Einzelberechnung</h2>
+  <div class="form-row" style="margin-top:12px">
+    <div class="field">
+      <label class="muted">Hausadresse (Ziel)</label>
+      <input id="homeAddress" type="text" placeholder="z. B. Musterstraße 1, 10115 Berlin" autocomplete="off">
     </div>
+    <div class="field">
+      <label class="muted">Von-Adresse (optional)</label>
+      <input id="startAddress" type="text" placeholder="z. B. Bahnhofstraße 5" autocomplete="off">
+    </div>
+  </div>
 
+  <div class="form-row">
+    <div class="field">
+      <label for="rainLevel">Akzeptierter Niederschlag:</label>
+      <select id="rainLevel">
+        <option value="0" selected>Kein Niederschlag</option>
+        <option value="0.2">0.2 mm/h</option>
+      </select>
+    </div>
+    <div class="field">
+      <label class="muted">Trocken-Fenster (Min)</label>
+      <select id="dryWindow">
+        <option value="15">15</option>
+        <option value="30" selected>30</option>
+        <option value="45">45</option>
+        <option value="60">60</option>
+      </select>
+    </div>
+  </div>
+
+  <div style="display:flex; gap:8px; margin-top:12px">
+    <button class="primary" onclick="calculateSafeRide()">Berechnen: Wann losfahren?</button>
+    <button class="action-btn secondary" id="saveHomeBtn">Haus speichern</button>
+    <button class="action-btn secondary" id="saveStartBtn">Von speichern</button>
+  </div>
+
+  <div id="result" class="muted">Ergebnis erscheint hier.</div>
+</div>
     <aside class="panel">
       <h2>Gespeicherte Fahrten</h2>
 
