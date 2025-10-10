@@ -92,7 +92,7 @@
     </header>
 
     <div class="panel" aria-live="polite">
-      <h2>dressen & Einzelberechnung</h2>
+      <h2>Adressen & Einzelberechnung</h2>
       <div class="form-row" style="margin-top:12px">
         <div class="field">
           <label class="muted">Hausadresse (Ziel)</label>
@@ -133,7 +133,7 @@
     </div>
 
     <aside class="panel">
-      <h2>Gespeicherte Fahrten</h2>
+      <h2>speicherte Fahrten</h2>
 
       <div style="margin-top:8px">
         <label class="muted">Titel</label>
@@ -365,7 +365,7 @@
         directionsService.route({
           origin: startVal,
           destination: destVal,
-          travelMode: google.maps.TravelMode.DRIVING
+          travelMode: google.maps.TravelMode.BICYCLING
         }, async (result, status) => {
           if (status !== 'OK') { showResult('Route nicht gefunden', 'danger'); return; }
           const duration = result.routes[0].legs[0].duration.value; // in Sekunden
