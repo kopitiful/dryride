@@ -106,7 +106,7 @@
 
       <div class="form-row">
         <div class="field">
-          <label for="rainLevel">zeptierter Niederschlag:</label>
+          <label for="rainLevel">Akzeptierter Niederschlag:</label>
           <select id="rainLevel">
             <option value="0">Kein Niederschlag</option>
             <option value="2" selected>Weniger als 2 mm/h</option>
@@ -293,14 +293,73 @@
     geocoder.geocode({ address: startVal }, async function(results, status) {
       if (status === 'OK' && results[0]) {
         const loc = results[0].geometry.location;
-        const precip = await getPrecipAtTime(loc.lat(), loc.lng(), new Date());
-        if (precip !== null) {
-          const limit = parseFloat(document.getElementById('rainLevel').value);
-          const text = precip <= limit ? `🚲 Jetzt losfahren! Regen ${precip.toFixed(1)} mm/h` : `🌧 Aktueller Regen: ${precip.toFixed(1)} mm/h — nächstes trockenes Zeitfenster prüfen`;
-          showResult(text);
-        } else {
+        const now = new Date();
+        console.group('Aktueller Niederschlag für: ' + startVal);
+        console.log('Koordinaten:', { lat: loc.lat(), lng: loc.lng() });
+        console.log('Zeitpunkt:', now.toLocaleString('de-DE'));
+        const precip = await getPrecipAtTime(loc.lat(), loc.lng(), now);
+        if (precip === null) {
           showResult('Suche...', 'muted');
+          console.log('Suche Wetterdaten für:', { lat: loc.lat(), lng: loc.lng(), time: now.toLocaleString('de-DE') });
+          console.groupEnd();
+          return;
         }
+        const limit = parseFloat(document.getElementById('rainLevel').value);
+        console.log('Aktueller Niederschlag:', {
+          Niederschlag: precip.toFixed(1) + ' mm/h',
+          Akzeptiert: precip <= limit ? 'Ja' : 'Nein (Regen)',
+          Grenzwert: limit + ' mm/h'
+        });
+
+        if (precip <= limit) {
+          showResult(`🚲 Jetzt losfahren! Regen ${precip.toFixed(1)} mm/h`, 'success');
+          console.log('Ergebnis: Jetzt losfahren, Niederschlag akzeptabel');
+          console.groupEnd();
+          return;
+        }
+
+        // rüfe nächstes trockenes Zeitfenster innerhalb von 4 Stunden
+        console.group('Suche nach trockenem Zeitfenster (4 Stunden)');
+        const endTime = new Date(now.getTime() + 4 * 60 * 60 * 1000); // 4 Stunden
+        let firstDryTime = null;
+        for (let offset = 0; offset < 4 * 60 * 60 * 1000; offset += 3600 * 1000) { // Stunde für Stunde
+          const checkTime = new Date(now.getTime() + offset);
+          if (checkTime > endTime) {
+            console.log('Zeitpunkt überschreitet 4-Stunden-Grenze:', checkTime.toLocaleString('de-DE'));
+            break;
+          }
+          const checkPrecip = await getPrecipAtTime(loc.lat(), loc.lng(), checkTime);
+          if (checkPrecip === null) {
+            showResult('Suche...', 'muted');
+            console.log('Suche Wetterdaten für:', { lat: loc.lat(), lng: loc.lng(), time: checkTime.toLocaleString('de-DE') });
+            console.groupEnd();
+            console.groupEnd();
+            return;
+          }
+          console.log(`Niederschlag bei ${checkTime.toLocaleTimeString('de-DE')}:`, {
+            Niederschlag: checkPrecip.toFixed(1) + ' mm/h',
+            Akzeptiert: checkPrecip <= limit ? 'Ja' : 'Nein (Regen)'
+          });
+          if (checkPrecip <= limit) {
+            firstDryTime = checkTime;
+            break;
+          }
+        }
+        console.groupEnd();
+
+        if (firstDryTime) {
+          const timeStr = firstDryTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+          showResult(`🌧 Aktueller Regen: ${precip.toFixed(1)} mm/h — nächstes trockenes Zeitfenster: ${timeStr}`, 'muted');
+          console.log('Ergebnis:', {
+            Aktueller_Niederschlag: precip.toFixed(1) + ' mm/h',
+            Nächstes_Trockenes_Zeitfenster: firstDryTime.toLocaleString('de-DE'),
+            Nachricht: `Aktueller Regen: ${precip.toFixed(1)} mm/h — nächstes trockenes Zeitfenster: ${timeStr}`
+          });
+        } else {
+          showResult(`🌧 Aktueller Regen: ${precip.toFixed(1)} mm/h — kein trockenes Zeitfenster innerhalb der nächsten 4 Stunden`, 'muted');
+          console.log('Ergebnis: Kein trockenes Zeitfenster innerhalb der nächsten 4 Stunden');
+        }
+        console.groupEnd();
       }
     });
   }
