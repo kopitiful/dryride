@@ -377,10 +377,26 @@
           showResult('Aktuelle Wetterdaten nicht verfügbar','danger'); return;
         }
         if(currentPrecip > limit){
-          showResult(`🌧 Aktueller Regen: ${currentPrecip.toFixed(1)} mm/h — bitte warten`,'muted'); return;
+          // Look for the first time within 24 hours where precipitation is <= limit
+          let firstDryTime = null;
+          for(let i = 0; i < weather.time.length; i++){
+            const forecastTime = new Date(weather.time[i]);
+            if(forecastTime > endTime) break;
+            if(weather.precipitation[i] <= limit){
+              firstDryTime = forecastTime;
+              break;
+            }
+          }
+          if(firstDryTime){
+            const timeStr = firstDryTime.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'});
+            showResult(`🌧 Aktueller Regen: ${currentPrecip.toFixed(1)} mm/h — warten bis ${timeStr}, dann trocken`,'muted');
+          } else {
+            showResult('🌧 Kein trockenes Fenster innerhalb der nächsten 24 Stunden','muted');
+          }
+          return;
         }
 
-        // Analyze forecast for the next 24 hours
+        // If not raining, analyze forecast for the next 24 hours
         let firstRainTime = null;
         for(let i = 0; i < weather.time.length; i++){
           const forecastTime = new Date(weather.time[i]);
