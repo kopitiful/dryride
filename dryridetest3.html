@@ -109,7 +109,7 @@
           <label for="rainLevel">Akzeptierter Niederschlag:</label>
           <select id="rainLevel">
             <option value="0">Kein Niederschlag</option>
-            <option value="2" selected>Weniger als 2 mm/h</option>
+            <option value="0.2" selected>0.2 mm/h</option>
           </select>
         </div>
         <div class="field">
@@ -118,6 +118,16 @@
             <option value="15">15</option>
             <option value="30" selected>30</option>
             <option value="60">60</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="muted">Suchzeitraum</label>
+          <select id="searchWindow">
+            <option value="0.5" selected>30 Minuten</option>
+            <option value="2">2 Stunden</option>
+            <option value="4">4 Stunden</option>
+            <option value="6">6 Stunden</option>
+            <option value="9">9 Stunden</option>
           </select>
         </div>
       </div>
@@ -310,11 +320,13 @@
         }
         const limit = parseFloat(document.getElementById('rainLevel').value);
         const dryWindow = parseInt(document.getElementById('dryWindow').value) * 60 * 1000;
+        const searchWindow = parseFloat(document.getElementById('searchWindow').value) * 3600 * 1000;
         console.log('Einstellungen:', {
           Niederschlag: precip.toFixed(1) + ' mm/h',
           Akzeptiert: precip <= limit ? 'Ja' : 'Nein (Regen)',
           Grenzwert: limit + ' mm/h',
-          TrockenFenster: (dryWindow / 60000) + ' Minuten'
+          TrockenFenster: (dryWindow / 60000) + ' Minuten',
+          Suchzeitraum: (searchWindow / 3600) + ' Stunden'
         });
 
         if (precip <= limit) {
@@ -348,7 +360,7 @@
             // Suche nach nächstem Regenfenster
             let nextRainTime = null;
             console.group('Suche nach nächstem Regenfenster');
-            for (let offset = dryWindow + 5 * 60 * 1000; offset <= 9 * 3600 * 1000; offset += 5 * 60 * 1000) {
+            for (let offset = dryWindow + 5 * 60 * 1000; offset <= searchWindow; offset += 5 * 60 * 1000) {
               const checkTime = new Date(now.getTime() + offset);
               const checkPrecip = await getPrecipAtTime(loc.lat(), loc.lng(), checkTime);
               if (checkPrecip === null) {
@@ -382,20 +394,22 @@
           }
         }
 
-        // Suche nach trockenem Zeitfenster in 2, 4, 6, 9 Stunden
-        console.group('Suche nach trockenem Zeitfenster');
-        const searchIntervals = [
-          ...Array.from({ length: 4 }, (_, i) => (i + 1) * 3600 * 1000),
-          2 * 3600 * 1000, 4 * 3600 * 1000, 6 * 3600 * 1000, 9 * 3600 * 1000
-        ];
+        // Suche nach trockenem Zeitfenster
+        console.group(`Suche nach trockenem Zeitfenster (bis ${(searchWindow / 3600)} Stunden)`);
+        const endTime = new Date(now.getTime() + searchWindow);
         let firstDryTime = null;
         let nextRainTime = null;
-        for (const offset of searchIntervals) {
+        const interval = searchWindow <= 0.5 * 3600 * 1000 ? 5 * 60 * 1000 : 3600 * 1000; // 5 Minuten für 30 Min, sonst 1 Stunde
+        for (let offset = interval; offset <= searchWindow; offset += interval) {
           const checkTime = new Date(now.getTime() + offset);
           console.group(`Prüfung für Startzeit: ${checkTime.toLocaleString('de-DE')}`);
           let isDryWindow = true;
           for (let windowOffset = 0; windowOffset <= dryWindow; windowOffset += 5 * 60 * 1000) {
             const windowCheckTime = new Date(checkTime.getTime() + windowOffset);
+            if (windowCheckTime > endTime) {
+              console.log('Zeitpunkt überschreitet Suchzeitraum:', windowCheckTime.toLocaleString('de-DE'));
+              break;
+            }
             const checkPrecip = await getPrecipAtTime(loc.lat(), loc.lng(), windowCheckTime);
             if (checkPrecip === null) {
               showResult('Suche...', 'muted');
@@ -418,8 +432,12 @@
             firstDryTime = checkTime;
             // Suche nach nächstem Regenfenster
             console.group('Suche nach nächstem Regenfenster');
-            for (let rainOffset = dryWindow + 5 * 60 * 1000; rainOffset <= 9 * 3600 * 1000; rainOffset += 5 * 60 * 1000) {
+            for (let rainOffset = dryWindow + 5 * 60 * 1000; rainOffset <= searchWindow; rainOffset += 5 * 60 * 1000) {
               const rainCheckTime = new Date(checkTime.getTime() + rainOffset);
+              if (rainCheckTime > endTime) {
+                console.log('Zeitpunkt überschreitet Suchzeitraum:', rainCheckTime.toLocaleString('de-DE'));
+                break;
+              }
               const checkPrecip = await getPrecipAtTime(loc.lat(), loc.lng(), rainCheckTime);
               if (checkPrecip === null) {
                 showResult('Suche...', 'muted');
@@ -456,8 +474,8 @@
             Nachricht: `Aktueller Regen: ${precip.toFixed(1)} mm/h — trockenes Zeitfenster ab ${timeStr}, Regen erwartet ab ${rainTimeStr}`
           });
         } else {
-          showResult(`🌧 Aktueller Regen: ${precip.toFixed(1)} mm/h — kein trockenes Zeitfenster innerhalb der nächsten 9 Stunden`, 'muted');
-          console.log('Ergebnis: Kein trockenes Zeitfenster innerhalb der nächsten 9 Stunden');
+          showResult(`🌧 Aktueller Regen: ${precip.toFixed(1)} mm/h — kein trockenes Zeitfenster innerhalb der nächsten ${(searchWindow / 3600)} Stunden`, 'muted');
+          console.log('Ergebnis:', `Kein trockenes Zeitfenster innerhalb der nächsten ${(searchWindow / 3600)} Stunden`);
         }
         console.groupEnd();
       }
@@ -559,14 +577,16 @@
           });
 
           const now = new Date();
-          const endTime = new Date(now.getTime() + 9 * 3600 * 1000); // Max 9 Stunden
           const limit = parseFloat(document.getElementById('rainLevel').value);
           const dryWindow = parseInt(document.getElementById('dryWindow').value) * 60 * 1000;
+          const searchWindow = parseFloat(document.getElementById('searchWindow').value) * 3600 * 1000;
+          const endTime = new Date(now.getTime() + searchWindow);
           console.log('Einstellungen:', {
             rainLevel: limit + ' mm/h',
             dryWindow: (dryWindow / 60000) + ' Minuten',
+            searchWindow: (searchWindow / 3600) + ' Stunden',
             Startzeit: now.toLocaleString('de-DE'),
-            Endzeit_9h: endTime.toLocaleString('de-DE')
+            Endzeit: endTime.toLocaleString('de-DE')
           });
 
           // Teile die Route in 5-Minuten-Abschnitte
@@ -594,7 +614,7 @@
           let firstRainPoint = null;
           for (const point of points) {
             if (point.time > endTime) {
-              console.log('Zeitpunkt überschreitet 9-Stunden-Grenze:', point.time.toLocaleString('de-DE'));
+              console.log('Zeitpunkt überschreitet Suchzeitraum:', point.time.toLocaleString('de-DE'));
               break;
             }
             const precip = await getPrecipAtTime(point.lat, point.lng, point.time);
@@ -622,7 +642,7 @@
             // Suche nach nächstem Regenfenster
             console.group('Suche nach nächstem Regenfenster');
             let nextRainTime = null;
-            for (let offset = duration * 1000 + 5 * 60 * 1000; offset <= 9 * 3600 * 1000; offset += 5 * 60 * 1000) {
+            for (let offset = duration * 1000 + 5 * 60 * 1000; offset <= searchWindow; offset += 5 * 60 * 1000) {
               const checkTime = new Date(now.getTime() + offset);
               const progress = Math.min((offset - duration * 1000) / (duration * 1000), 1);
               const index = Math.floor(progress * (path.length - 1));
@@ -672,7 +692,7 @@
             // Suche nach nächstem Regenfenster
             console.group('Suche nach nächstem Regenfenster');
             let nextRainTime = null;
-            for (let offset = firstRainTime.getTime() - now.getTime() + 5 * 60 * 1000; offset <= 9 * 3600 * 1000; offset += 5 * 60 * 1000) {
+            for (let offset = firstRainTime.getTime() - now.getTime() + 5 * 60 * 1000; offset <= searchWindow; offset += 5 * 60 * 1000) {
               const checkTime = new Date(now.getTime() + offset);
               const progress = Math.min((offset - duration * 1000) / (duration * 1000), 1);
               const index = Math.floor(progress * (path.length - 1));
@@ -701,7 +721,11 @@
             const timeStr = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
             const rainTimeStr = nextRainTime ? nextRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : 'unbekannt';
             showResult(`🚲 Jetzt losfahren! Trocken ab ${timeStr}, Regen erwartet ab ${rainTimeStr}`, 'success');
-            console.log(`Ergebnis: Jetzt losfahren, trocken ab ${timeStr}, Regen erwartet ab ${rainTimeStr}`);
+            console.log('Ergebnis:', {
+              Trockenes_Zeitfenster: timeStr,
+              Nächstes_Regenfenster: rainTimeStr,
+              Nachricht: `Jetzt losfahren, trocken ab ${timeStr}, Regen erwartet ab ${rainTimeStr}`
+            });
             console.groupEnd();
             console.groupEnd();
             return;
@@ -709,17 +733,14 @@
           console.groupEnd();
 
           // Finde die erste Zeit, zu der die gesamte Route trocken ist
-          console.group('Suche nach trockenem Zeitfenster');
+          console.group(`Suche nach trockenem Zeitfenster (bis ${(searchWindow / 3600)} Stunden)`);
           let firstDryTime = null;
           let nextRainTime = null;
-          const searchIntervals = [
-            ...Array.from({ length: 4 }, (_, i) => (i + 1) * 3600 * 1000),
-            2 * 3600 * 1000, 4 * 3600 * 1000, 6 * 3600 * 1000, 9 * 3600 * 1000
-          ];
-          for (const offset of searchIntervals) {
+          const searchInterval = searchWindow <= 0.5 * 3600 * 1000 ? 5 * 60 * 1000 : 3600 * 1000; // 5 Minuten für 30 Min, sonst 1 Stunde
+          for (let offset = searchInterval; offset <= searchWindow; offset += searchInterval) {
             const startTime = new Date(now.getTime() + offset);
             if (startTime > endTime) {
-              console.log('Startzeit überschreitet 9-Stunden-Grenze:', startTime.toLocaleString('de-DE'));
+              console.log('Startzeit überschreitet Suchzeitraum:', startTime.toLocaleString('de-DE'));
               break;
             }
             let isDry = true;
@@ -730,7 +751,7 @@
               const point = path[index];
               const timeAtPoint = new Date(startTime.getTime() + progress * duration * 1000);
               if (timeAtPoint > endTime) {
-                console.log('Zeitpunkt überschreitet 9-Stunden-Grenze:', timeAtPoint.toLocaleString('de-DE'));
+                console.log('Zeitpunkt überschreitet Suchzeitraum:', timeAtPoint.toLocaleString('de-DE'));
                 break;
               }
               const precip = await getPrecipAtTime(point.lat, point.lng, timeAtPoint);
@@ -756,8 +777,12 @@
               firstDryTime = startTime;
               // Suche nach nächstem Regenfenster
               console.group('Suche nach nächstem Regenfenster');
-              for (let rainOffset = duration * 1000 + 5 * 60 * 1000; rainOffset <= 9 * 3600 * 1000; rainOffset += 5 * 60 * 1000) {
+              for (let rainOffset = duration * 1000 + 5 * 60 * 1000; rainOffset <= searchWindow; rainOffset += 5 * 60 * 1000) {
                 const checkTime = new Date(startTime.getTime() + rainOffset);
+                if (checkTime > endTime) {
+                  console.log('Zeitpunkt überschreitet Suchzeitraum:', checkTime.toLocaleString('de-DE'));
+                  break;
+                }
                 const progress = Math.min((rainOffset - duration * 1000) / (duration * 1000), 1);
                 const index = Math.floor(progress * (path.length - 1));
                 const point = path[index] || path[path.length - 1];
@@ -798,8 +823,8 @@
               Nachricht: `Regen um ${firstRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} — trockenes Zeitfenster ab ${timeStr}, Regen erwartet ab ${rainTimeStr}`
             });
           } else {
-            showResult('🌧 Kein trockenes Zeitfenster innerhalb der nächsten 9 Stunden', 'muted');
-            console.log('Ergebnis: Kein trockenes Zeitfenster innerhalb der nächsten 9 Stunden');
+            showResult(`🌧 Kein trockenes Zeitfenster innerhalb der nächsten ${(searchWindow / 3600)} Stunden`, 'muted');
+            console.log('Ergebnis:', `Kein trockenes Zeitfenster innerhalb der nächsten ${(searchWindow / 3600)} Stunden`);
           }
           console.groupEnd();
         });
