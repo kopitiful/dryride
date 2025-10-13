@@ -92,7 +92,7 @@
     </header>
 
     <div class="panel" aria-live="polite">
-      <h2>dressen & Einzelberechnung</h2>
+      <h2>Adressen & Einzelberechnung</h2>
       <div class="form-row" style="margin-top:12px">
         <div class="field">
           <label class="muted">Hausadresse (Ziel)</label>
@@ -113,11 +113,15 @@
           </select>
         </div>
         <div class="field">
-          <label class="muted">Trocken-Fenster (Min)</label>
+          <label class="muted">Trocken-Fenster</label>
           <select id="dryWindow">
-            <option value="15">15</option>
-            <option value="30" selected>30</option>
-            <option value="60">60</option>
+            <option value="15">15 Minuten</option>
+            <option value="30" selected>30 Minuten</option>
+            <option value="60">60 Minuten</option>
+            <option value="120">2 Stunden</option>
+            <option value="240">4 Stunden</option>
+            <option value="360">6 Stunden</option>
+            <option value="540">9 Stunden</option>
           </select>
         </div>
         <div class="field">
@@ -167,11 +171,15 @@
 
         <div class="form-row" style="margin-top:8px">
           <div class="field">
-            <label class="muted">Fenster (Min)</label>
+            <label class="muted">Fenster</label>
             <select id="rideWindow">
-              <option value="15">15</option>
-              <option value="30" selected>30</option>
-              <option value="60">60</option>
+              <option value="15">15 Minuten</option>
+              <option value="30" selected>30 Minuten</option>
+              <option value="60">60 Minuten</option>
+              <option value="120">2 Stunden</option>
+              <option value="240">4 Stunden</option>
+              <option value="360">6 Stunden</option>
+              <option value="540">9 Stunden</option>
             </select>
           </div>
           <div class="field">
@@ -236,7 +244,7 @@
     return rides.map(ride => ({
       ...ride,
       maxRain: [0, 0.2].includes(ride.maxRain) ? ride.maxRain : 0.2,
-      window: [15, 30, 60].includes(ride.window) ? ride.window : 30
+      window: [15, 30, 60, 120, 240, 360, 540].includes(ride.window) ? ride.window : 30
     }));
   }
 
@@ -329,12 +337,16 @@
           Suchzeitraum: (searchWindow / 3600) + ' Stunden'
         });
 
+        if (dryWindow > searchWindow) {
+          console.warn(`Warnung: Trocken-Fenster (${dryWindow / 60000} Minuten) ist größer als Suchzeitraum (${searchWindow / 3600} Stunden). Suche wird auf Suchzeitraum beschränkt.`);
+        }
+
         if (precip <= limit) {
           // Prüfe Trocken-Fenster in 5-Minuten-Intervallen
           let isDryWindow = true;
           let firstRainTime = null;
           console.group('Trocken-Fenster-Prüfung (Startpunkt)');
-          for (let offset = 0; offset <= dryWindow; offset += 5 * 60 * 1000) {
+          for (let offset = 0; offset <= Math.min(dryWindow, searchWindow); offset += 5 * 60 * 1000) {
             const checkTime = new Date(now.getTime() + offset);
             const checkPrecip = await getPrecipAtTime(loc.lat(), loc.lng(), checkTime);
             if (checkPrecip === null) {
@@ -404,7 +416,7 @@
           const checkTime = new Date(now.getTime() + offset);
           console.group(`Prüfung für Startzeit: ${checkTime.toLocaleString('de-DE')}`);
           let isDryWindow = true;
-          for (let windowOffset = 0; windowOffset <= dryWindow; windowOffset += 5 * 60 * 1000) {
+          for (let windowOffset = 0; windowOffset <= Math.min(dryWindow, searchWindow - offset); windowOffset += 5 * 60 * 1000) {
             const windowCheckTime = new Date(checkTime.getTime() + windowOffset);
             if (windowCheckTime > endTime) {
               console.log('Zeitpunkt überschreitet Suchzeitraum:', windowCheckTime.toLocaleString('de-DE'));
@@ -589,6 +601,10 @@
             Endzeit: endTime.toLocaleString('de-DE')
           });
 
+          if (dryWindow > searchWindow) {
+            console.warn(`Warnung: Trocken-Fenster (${dryWindow / 60000} Minuten) ist größer als Suchzeitraum (${searchWindow / 3600} Stunden). Suche wird auf Suchzeitraum beschränkt.`);
+          }
+
           // Teile die Route in 5-Minuten-Abschnitte
           const interval = 5 * 60;
           const numIntervals = Math.ceil(duration / interval);
@@ -681,7 +697,7 @@
 
           // Prüfe Trocken-Fenster
           console.group('Trocken-Fenster-Prüfung');
-          const windowEndTime = new Date(firstRainTime.getTime() - dryWindow);
+          const windowEndTime = new Date(firstRainTime.getTime() - Math.min(dryWindow, searchWindow));
           console.log('Erster Regen:', {
             Zeitpunkt: firstRainTime.toLocaleString('de-DE'),
             Koordinaten: { lat: firstRainPoint.lat, lng: firstRainPoint.lng },
