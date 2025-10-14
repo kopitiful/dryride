@@ -2,80 +2,237 @@
 <html lang="de">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DryRide — Uber Style</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>DryRide — Trocken radeln</title>
   <link rel="preconnect" href="https://maps.googleapis.com">
   <style>
-    :root{
-      --bg:#0f1115;
-      --card:#121417;
-      --muted:#9aa3b2;
-      --accent:#00d084;
-      --danger:#ff5252;
+    :root {
+      --bg: #0f1115;
+      --card: #121417;
+      --muted: #9aa3b2;
+      --accent: #00d084;
+      --danger: #ff5252;
       --glass: rgba(255,255,255,0.03);
-      --radius:14px;
-      --shadow: 0 6px 20px rgba(2,6,23,0.6);
+      --radius: 12px;
+      --shadow: 0 4px 16px rgba(2,6,23,0.5);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
       color-scheme: dark;
     }
-    *{box-sizing:border-box}
-    html,body{height:100%}
-    body{
-      margin:0; background:linear-gradient(180deg,#0b0c0e,#0f1115);
-      color:#e6eef8; -webkit-font-smoothing:antialiased; padding:18px;
-      display:flex; align-items:start; justify-content:center;
-      font-size:15px;
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      background: linear-gradient(180deg, #0b0c0e, #0f1115);
+      color: #e6eef8;
+      -webkit-font-smoothing: antialiased;
+      font-size: 16px;
+      display: flex;
+      flex-direction: column;
+      padding: 12px;
     }
-    .app{
-      width:100%; max-width:980px;
-      display:grid; grid-template-columns: 1fr 420px; gap:18px;
+    .app {
+      max-width: 600px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
     }
 
-    header{grid-column:1/-1; display:flex; align-items:center; justify-content:space-between; margin-bottom:6px}
-    header h1{margin:0; font-size:20px; letter-spacing:0.2px}
-    header .sub{color:var(--muted); font-size:13px}
-
-    .panel{
-      background:linear-gradient(180deg, rgba(255,255,255,0.02), var(--glass));
-      border-radius:var(--radius); padding:18px; box-shadow:var(--shadow);
+    header {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 12px;
     }
-    .panel h2{margin:0 0 8px 0; font-size:16px}
-    .form-row{display:flex; gap:10px; margin-top:10px}
-    .field{display:flex; flex-direction:column; gap:6px; width:100%}
-    input[type="text"], input[type="time"], select{
-      background:transparent; border:1px solid rgba(255,255,255,0.06);
-      color:inherit; padding:10px 12px; border-radius:10px; outline:none;
+    header h1 {
+      font-size: 20px;
+      font-weight: 600;
     }
-    input::placeholder{color:rgba(255,255,255,0.25)}
-    .small-btn{
-      background:transparent; border:1px solid rgba(255,255,255,0.06);
-      color:inherit; padding:8px 12px; border-radius:10px; cursor:pointer;
+    header .sub {
+      color: var(--muted);
+      font-size: 14px;
+      text-align: center;
     }
-    .primary{
-      background:linear-gradient(90deg,var(--accent), #00c37a); color:#061012; border:none;
-      padding:10px 14px; border-radius:12px; cursor:pointer; font-weight:600;
-      box-shadow: 0 6px 18px rgba(0,208,132,0.12);
+
+    .tab-nav {
+      display: flex;
+      gap: 8px;
+      background: var(--glass);
+      border-radius: var(--radius);
+      padding: 4px;
+      position: sticky;
+      top: 12px;
+      z-index: 10;
     }
-    .muted{ color:var(--muted); font-size:13px; margin-top:8px }
-
-    .rides-list{ display:flex; flex-direction:column; gap:10px; margin-top:8px }
-    .ride{
-      display:flex; justify-content:space-between; align-items:center;
-      padding:10px; border-radius:10px; background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.02));
-      border:1px solid rgba(255,255,255,0.03);
+    .tab-nav button {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      padding: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border-radius: 8px;
+      transition: background 0.2s, color 0.2s;
     }
-    .ride .meta{ font-size:14px; color:#e6eef8 }
-    .ride .meta .sub{color:var(--muted); font-size:12px}
+    .tab-nav button.active {
+      background: var(--accent);
+      color: #061012;
+      font-weight: 600;
+    }
+    .tab-nav button:hover:not(.active) {
+      background: rgba(255,255,255,0.05);
+    }
 
-    .action-btn{ background:transparent; border:1px solid rgba(255,255,255,0.06); color:inherit; padding:6px 8px; border-radius:8px; cursor:pointer; margin-left:6px }
-    .action-btn.secondary{ border-color:rgba(255,255,255,0.03) }
-    .toggle-enabled{ background:rgba(0,208,132,0.12); color:var(--accent); border:1px solid rgba(0,208,132,0.18) }
-    .toggle-disabled{ background:rgba(255,82,82,0.06); color:var(--danger); border:1px solid rgba(255,82,82,0.08) }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
 
-    #result{ margin-top:12px; padding:12px; border-radius:10px; background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.02)); border:1px solid rgba(255,255,255,0.03); color:var(--muted); }
+    .panel {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: var(--shadow);
+    }
+    .panel h2 {
+      font-size: 16px;
+      margin-bottom: 12px;
+    }
+    .form-row {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    label {
+      color: var(--muted);
+      font-size: 14px;
+    }
+    input[type="text"], input[type="time"], select {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.08);
+      color: inherit;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 16px;
+      outline: none;
+      width: 100%;
+      min-height: 44px;
+    }
+    input::placeholder {
+      color: rgba(255,255,255,0.3);
+    }
+    .small-btn, .action-btn, .primary {
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      cursor: pointer;
+      min-height: 44px;
+      text-align: center;
+    }
+    .small-btn {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.08);
+      color: inherit;
+    }
+    .primary {
+      background: linear-gradient(90deg, var(--accent), #00c37a);
+      color: #061012;
+      border: none;
+      font-weight: 600;
+      box-shadow: 0 4px 12px rgba(0,208,132,0.15);
+    }
+    .action-btn {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.08);
+      color: inherit;
+    }
+    .action-btn.secondary {
+      border-color: rgba(255,255,255,0.04);
+    }
+    .toggle-enabled {
+      background: rgba(0,208,132,0.15);
+      color: var(--accent);
+      border: 1px solid rgba(0,208,132,0.2);
+    }
+    .toggle-disabled {
+      background: rgba(255,82,82,0.08);
+      color: var(--danger);
+      border: 1px solid rgba(255,82,82,0.1);
+    }
+    .muted {
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: 12px;
+    }
 
-    @media (max-width:900px){
-      .app{ grid-template-columns:1fr; padding:12px }
+    .rides-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .ride {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px;
+      border-radius: 8px;
+      background: var(--glass);
+      border: 1px solid rgba(255,255,255,0.04);
+    }
+    .ride .meta {
+      font-size: 14px;
+    }
+    .ride .meta .sub {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    #result {
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 8px;
+      background: var(--glass);
+      border: 1px solid rgba(255,255,255,0.04);
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    @media (min-width: 600px) {
+      .app {
+        max-width: 800px;
+      }
+      header {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .tab-nav {
+        padding: 6px;
+      }
+      .tab-nav button {
+        font-size: 16px;
+      }
+      .form-row {
+        flex-direction: row;
+        gap: 16px;
+      }
+      .panel {
+        padding: 20px;
+      }
+      .panel h2 {
+        font-size: 18px;
+      }
+    }
+    @media (min-width: 900px) {
+      .app {
+        max-width: 1000px;
+      }
     }
   </style>
 </head>
@@ -86,92 +243,105 @@
         <h1>DryRide</h1>
         <div class="sub">Trocken & smart radeln — Benachrichtigungen 1 h vorher</div>
       </div>
-      <div style="display:flex; gap:8px; align-items:center">
-        <button id="notifyPermissionBtn" class="small-btn">🔔 Notifications</button>
-      </div>
+      <button id="notifyPermissionBtn" class="small-btn">🔔 Benachrichtigungen</button>
     </header>
 
-    <div class="panel" aria-live="polite">
-      <h2>Adressen & Einzelberechnung</h2>
-      <div class="form-row" style="margin-top:12px">
-        <div class="field">
-          <label class="muted">Hausadresse (Ziel)</label>
-          <input id="homeAddress" type="text" placeholder="z. B. Musterstraße 1, 10115 Berlin" autocomplete="off">
-        </div>
-        <div class="field">
-          <label class="muted">Von-Adresse</label>
-          <input id="startAddress" type="text" placeholder="z. B. Bahnhofstraße 5" autocomplete="off">
-        </div>
-      </div>
-
-      <div class="form-row">
-        <div class="field">
-          <label for="rainLevel">Akzeptierter Niederschlag:</label>
-          <select id="rainLevel">
-            <option value="0">Kein Niederschlag</option>
-            <option value="0.2" selected>0.2 mm/h</option>
-          </select>
-        </div>
-        <div class="field">
-          <label class="muted">Trocken-Fenster</label>
-          <select id="dryWindow">
-            <option value="15">15 Minuten</option>
-            <option value="30" selected>30 Minuten</option>
-            <option value="60">60 Minuten</option>
-            <option value="120">2 Stunden</option>
-            <option value="240">4 Stunden</option>
-            <option value="360">6 Stunden</option>
-            <option value="540">9 Stunden</option>
-          </select>
-        </div>
-        <div class="field">
-          <label class="muted">Suchzeitraum</label>
-          <select id="searchWindow">
-            <option value="0.5" selected>30 Minuten</option>
-            <option value="2">2 Stunden</option>
-            <option value="4">4 Stunden</option>
-            <option value="6">6 Stunden</option>
-            <option value="9">9 Stunden</option>
-          </select>
-        </div>
-      </div>
-
-      <div style="display:flex; gap:8px; margin-top:12px">
-        <button class="primary" onclick="calculateSafeRide()">Berechnen: Wann losfahren?</button>
-        <button class="action-btn secondary" id="saveHomeBtn">Haus speichern</button>
-        <button class="action-btn secondary" id="saveStartBtn">Von speichern</button>
-      </div>
-
-      <div id="result" class="muted">Ergebnis erscheint hier.</div>
+    <div class="tab-nav">
+      <button class="tab-btn active" data-tab="adhoc">Ad-hoc</button>
+      <button class="tab-btn" data-tab="routes">Routen</button>
     </div>
 
-    <aside class="panel">
-      <h2>Gespeicherte Fahrten</h2>
-
-      <div style="margin-top:8px">
-        <label class="muted">Titel</label>
-        <input id="rideTitle" type="text" placeholder="z. B. Arbeit">
-
-        <label class="muted" style="margin-top:8px">Startadresse</label>
-        <input id="rideOrigin" type="text" placeholder="Start (Autocomplete)">
-
-        <label class="muted" style="margin-top:8px">Ziel (leer = Hausadresse)</label>
-        <input id="rideDestination" type="text" placeholder="Ziel (Autocomplete)">
-
-        <div class="form-row" style="margin-top:8px">
+    <div id="adhoc" class="tab-content active">
+      <div class="panel" aria-live="polite">
+        <h2>Ad-hoc-Berechnung</h2>
+        <div class="form-row">
           <div class="field">
-            <label class="muted">Abfahrtszeit</label>
+            <label>Hausadresse (Ziel)</label>
+            <input id="homeAddress" type="text" placeholder="z. B. Musterstraße 1, 10115 Berlin" autocomplete="off">
+          </div>
+          <div class="field">
+            <label>Von-Adresse</label>
+            <input id="startAddress" type="text" placeholder="z. B. Bahnhofstraße 5" autocomplete="off">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="field">
+            <label>Akzeptierter Niederschlag</label>
+            <select id="rainLevel">
+              <option value="0">Kein Niederschlag</option>
+              <option value="0.2" selected>0.2 mm/h</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Trocken-Fenster</label>
+            <select id="dryWindow">
+              <option value="15">15 Minuten</option>
+              <option value="30" selected>30 Minuten</option>
+              <option value="60">60 Minuten</option>
+              <option value="120">2 Stunden</option>
+              <option value="240">4 Stunden</option>
+              <option value="360">6 Stunden</option>
+              <option value="540">9 Stunden</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Suchzeitraum</label>
+            <select id="searchWindow">
+              <option value="0.5" selected>30 Minuten</option>
+              <option value="2">2 Stunden</option>
+              <option value="4">4 Stunden</option>
+              <option value="6">6 Stunden</option>
+              <option value="9">9 Stunden</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <button class="primary" onclick="calculateSafeRide()">Berechnen: Wann losfahren?</button>
+          <button class="action-btn secondary" id="saveHomeBtn">Haus speichern</button>
+          <button class="action-btn secondary" id="saveStartBtn">Von speichern</button>
+        </div>
+
+        <div id="result" class="muted">Ergebnis erscheint hier.</div>
+      </div>
+    </div>
+
+    <div id="routes" class="tab-content">
+      <div class="panel">
+        <h2>Neue Route</h2>
+        <div class="form-row">
+          <div class="field">
+            <label>Titel</label>
+            <input id="rideTitle" type="text" placeholder="z. B. Arbeit">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field">
+            <label>Startadresse</label>
+            <input id="rideOrigin" type="text" placeholder="Start (Autocomplete)">
+          </div>
+          <div class="field">
+            <label>Ziel (leer = Hausadresse)</label>
+            <input id="rideDestination" type="text" placeholder="Ziel (Autocomplete)">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field">
+            <label>Abfahrtszeit</label>
             <input id="rideTime" type="time" value="07:30">
           </div>
           <div class="field">
-            <label class="muted">Wiederholung</label>
-            <select id="rideRepeat"><option value="once">Einmalig</option><option value="daily" selected>Täglich</option></select>
+            <label>Wiederholung</label>
+            <select id="rideRepeat">
+              <option value="once">Einmalig</option>
+              <option value="daily" selected>Täglich</option>
+            </select>
           </div>
         </div>
-
-        <div class="form-row" style="margin-top:8px">
+        <div class="form-row">
           <div class="field">
-            <label class="muted">Fenster</label>
+            <label>Trocken-Fenster</label>
             <select id="rideWindow">
               <option value="15">15 Minuten</option>
               <option value="30" selected>30 Minuten</option>
@@ -183,25 +353,24 @@
             </select>
           </div>
           <div class="field">
-            <label class="muted">Max Regen (mm/h)</label>
+            <label>Max Regen (mm/h)</label>
             <select id="rideRainLevel">
               <option value="0" selected>Kein Niederschlag</option>
               <option value="0.2">0.2 mm/h</option>
             </select>
           </div>
         </div>
-
-        <div style="display:flex; gap:8px; margin-top:10px">
-          <button class="primary" onclick="saveRide()">Fahrt speichern</button>
+        <div class="form-row">
+          <button class="primary" onclick="saveRide()">Route speichern</button>
           <button class="action-btn secondary" onclick="clearRideForm()">Form löschen</button>
         </div>
-      </div>
 
-      <div style="margin-top:12px">
-        <h3 style="margin:8px 0 6px 0; font-size:14px; color:#dfe9f3">Deine Fahrten</h3>
-        <div id="ridesList" class="rides-list"></div>
+        <div class="rides-list">
+          <h3 style="margin: 12px 0 8px; font-size: 16px; color: #dfe9f3">Deine Routen</h3>
+          <div id="ridesList" class="rides-list"></div>
+        </div>
       </div>
-    </aside>
+    </div>
   </div>
 
   <script async
@@ -214,13 +383,23 @@
   const KEY_START = 'dryride_start_v1';
   let acHome, acStart, acRideOrigin, acRideDest;
 
-  function showResult(msg, type){
+  // Tab-Navigation
+  document.querySelectorAll('.tab-btn').forEach(button => {
+    button.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+      button.classList.add('active');
+      document.getElementById(button.dataset.tab).classList.add('active');
+    });
+  });
+
+  function showResult(msg, type) {
     const el = document.getElementById('result');
     el.innerHTML = msg;
     el.className = type ? type : 'muted';
   }
 
-  function whenMapsReady(cb){
+  function whenMapsReady(cb) {
     if (window.google && google.maps && google.maps.places && google.maps.DirectionsService) return cb();
     setTimeout(() => whenMapsReady(cb), 200);
   }
@@ -232,13 +411,13 @@
     acRideDest = new google.maps.places.Autocomplete(document.getElementById('rideDestination'));
   });
 
-  function saveHome(){ localStorage.setItem(KEY_HOME, document.getElementById('homeAddress').value); showResult('Hausadresse gespeichert'); }
-  function saveStart(){ localStorage.setItem(KEY_START, document.getElementById('startAddress').value); showResult('Startadresse gespeichert'); }
+  function saveHome() { localStorage.setItem(KEY_HOME, document.getElementById('homeAddress').value); showResult('Hausadresse gespeichert'); }
+  function saveStart() { localStorage.setItem(KEY_START, document.getElementById('startAddress').value); showResult('Startadresse gespeichert'); }
 
   document.getElementById('saveHomeBtn').onclick = saveHome;
   document.getElementById('saveStartBtn').onclick = saveStart;
 
-  function loadRides(){
+  function loadRides() {
     const r = localStorage.getItem(KEY_RIDES);
     const rides = r ? JSON.parse(r) : [];
     return rides.map(ride => ({
@@ -248,9 +427,9 @@
     }));
   }
 
-  function saveRides(r){ localStorage.setItem(KEY_RIDES, JSON.stringify(r)); renderRides(); }
+  function saveRides(r) { localStorage.setItem(KEY_RIDES, JSON.stringify(r)); renderRides(); }
 
-  function clearRideForm(){
+  function clearRideForm() {
     document.getElementById('rideTitle').value = '';
     document.getElementById('rideOrigin').value = '';
     document.getElementById('rideDestination').value = '';
@@ -260,7 +439,7 @@
     document.getElementById('rideRainLevel').value = '0';
   }
 
-  function saveRide(){
+  function saveRide() {
     const rides = loadRides();
     const id = Date.now();
     const r = {
@@ -279,12 +458,12 @@
     clearRideForm();
   }
 
-  function deleteRide(id){
+  function deleteRide(id) {
     const rides = loadRides().filter(r => r.id !== id);
     saveRides(rides);
   }
 
-  async function getWeatherForecast(lat, lng){
+  async function getWeatherForecast(lat, lng) {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=precipitation&forecast_days=1`;
     const res = await fetch(url);
     const data = await res.json();
@@ -293,7 +472,7 @@
     return { time, precipitation };
   }
 
-  async function getPrecipAtTime(lat, lng, forecastTime){
+  async function getPrecipAtTime(lat, lng, forecastTime) {
     try {
       const weather = await getWeatherForecast(lat, lng);
       let closestIdx = 0, minDiff = 1e12;
@@ -307,7 +486,7 @@
     }
   }
 
-  async function updateCurrentPrecipDisplay(){
+  async function updateCurrentPrecipDisplay() {
     const startEl = document.getElementById('startAddress');
     const startVal = startEl.value;
     if (!startVal) return;
@@ -342,7 +521,6 @@
         }
 
         if (precip <= limit) {
-          // Prüfe Trocken-Fenster in 5-Minuten-Intervallen
           let isDryWindow = true;
           let firstRainTime = null;
           console.group('Trocken-Fenster-Prüfung (Startpunkt)');
@@ -369,7 +547,6 @@
           console.groupEnd();
 
           if (isDryWindow) {
-            // Suche nach nächstem Regenfenster
             let nextRainTime = null;
             console.group('Suche nach nächstem Regenfenster');
             for (let offset = dryWindow + 5 * 60 * 1000; offset <= searchWindow; offset += 5 * 60 * 1000) {
@@ -406,12 +583,11 @@
           }
         }
 
-        // Suche nach trockenem Zeitfenster
         console.group(`Suche nach trockenem Zeitfenster (bis ${(searchWindow / 3600)} Stunden)`);
         const endTime = new Date(now.getTime() + searchWindow);
         let firstDryTime = null;
         let nextRainTime = null;
-        const interval = searchWindow <= 0.5 * 3600 * 1000 ? 5 * 60 * 1000 : 3600 * 1000; // 5 Minuten für 30 Min, sonst 1 Stunde
+        const interval = searchWindow <= 0.5 * 3600 * 1000 ? 5 * 60 * 1000 : 3600 * 1000;
         for (let offset = interval; offset <= searchWindow; offset += interval) {
           const checkTime = new Date(now.getTime() + offset);
           console.group(`Prüfung für Startzeit: ${checkTime.toLocaleString('de-DE')}`);
@@ -442,7 +618,6 @@
           }
           if (isDryWindow) {
             firstDryTime = checkTime;
-            // Suche nach nächstem Regenfenster
             console.group('Suche nach nächstem Regenfenster');
             for (let rainOffset = dryWindow + 5 * 60 * 1000; rainOffset <= searchWindow; rainOffset += 5 * 60 * 1000) {
               const rainCheckTime = new Date(checkTime.getTime() + rainOffset);
@@ -496,10 +671,10 @@
   setInterval(updateCurrentPrecipDisplay, 60 * 1000);
   updateCurrentPrecipDisplay();
 
-  async function renderRides(){
+  async function renderRides() {
     const list = document.getElementById('ridesList');
     const rides = loadRides();
-    list.innerHTML = rides.length ? '' : '<div class="muted">Keine Fahrten</div>';
+    list.innerHTML = rides.length ? '' : '<div class="muted">Keine Routen</div>';
     const geocoder = new google.maps.Geocoder();
     for (const r of rides) {
       const el = document.createElement('div'); el.className = 'ride';
@@ -527,7 +702,7 @@
     }
   }
 
-  function loadRideIntoForm(id){
+  function loadRideIntoForm(id) {
     const r = loadRides().find(x => x.id === id); if (!r) return;
     document.getElementById('rideTitle').value = r.title;
     document.getElementById('rideOrigin').value = r.originAddress;
@@ -536,11 +711,12 @@
     document.getElementById('rideRepeat').value = r.repeat;
     document.getElementById('rideWindow').value = r.window;
     document.getElementById('rideRainLevel').value = r.maxRain;
+    document.querySelector('.tab-btn[data-tab="routes"]').click();
   }
 
-  function escapeHtml(text){ const div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
+  function escapeHtml(text) { const div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
 
-  async function calculateSafeRide(){
+  async function calculateSafeRide() {
     showResult('Berechne…');
     const startVal = document.getElementById('startAddress').value;
     const destVal = document.getElementById('homeAddress').value;
@@ -605,7 +781,6 @@
             console.warn(`Warnung: Trocken-Fenster (${dryWindow / 60000} Minuten) ist größer als Suchzeitraum (${searchWindow / 3600} Stunden). Suche wird auf Suchzeitraum beschränkt.`);
           }
 
-          // Teile die Route in 5-Minuten-Abschnitte
           const interval = 5 * 60;
           const numIntervals = Math.ceil(duration / interval);
           const points = [];
@@ -624,7 +799,6 @@
           }
           console.groupEnd();
 
-          // Prüfe Niederschlag für jeden Punkt
           console.group('Niederschlagsprüfung');
           let firstRainTime = null;
           let firstRainPoint = null;
@@ -655,7 +829,6 @@
           console.groupEnd();
 
           if (!firstRainTime) {
-            // Suche nach nächstem Regenfenster
             console.group('Suche nach nächstem Regenfenster');
             let nextRainTime = null;
             for (let offset = duration * 1000 + 5 * 60 * 1000; offset <= searchWindow; offset += 5 * 60 * 1000) {
@@ -695,7 +868,6 @@
             return;
           }
 
-          // Prüfe Trocken-Fenster
           console.group('Trocken-Fenster-Prüfung');
           const windowEndTime = new Date(firstRainTime.getTime() - Math.min(dryWindow, searchWindow));
           console.log('Erster Regen:', {
@@ -705,7 +877,6 @@
             TrockenFenster_Erfüllt: windowEndTime > now ? 'Ja' : 'Nein'
           });
           if (windowEndTime > now) {
-            // Suche nach nächstem Regenfenster
             console.group('Suche nach nächstem Regenfenster');
             let nextRainTime = null;
             for (let offset = firstRainTime.getTime() - now.getTime() + 5 * 60 * 1000; offset <= searchWindow; offset += 5 * 60 * 1000) {
@@ -748,11 +919,10 @@
           }
           console.groupEnd();
 
-          // Finde die erste Zeit, zu der die gesamte Route trocken ist
           console.group(`Suche nach trockenem Zeitfenster (bis ${(searchWindow / 3600)} Stunden)`);
           let firstDryTime = null;
           let nextRainTime = null;
-          const searchInterval = searchWindow <= 0.5 * 3600 * 1000 ? 5 * 60 * 1000 : 3600 * 1000; // 5 Minuten für 30 Min, sonst 1 Stunde
+          const searchInterval = searchWindow <= 0.5 * 3600 * 1000 ? 5 * 60 * 1000 : 3600 * 1000;
           for (let offset = searchInterval; offset <= searchWindow; offset += searchInterval) {
             const startTime = new Date(now.getTime() + offset);
             if (startTime > endTime) {
@@ -791,7 +961,6 @@
             }
             if (isDry) {
               firstDryTime = startTime;
-              // Suche nach nächstem Regenfenster
               console.group('Suche nach nächstem Regenfenster');
               for (let rainOffset = duration * 1000 + 5 * 60 * 1000; rainOffset <= searchWindow; rainOffset += 5 * 60 * 1000) {
                 const checkTime = new Date(startTime.getTime() + rainOffset);
