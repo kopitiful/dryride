@@ -777,6 +777,10 @@
             Endzeit: endTime.toLocaleString('de-DE')
           });
 
+          // Konvertiere dryWindow in lesbare Einheit
+          const dryWindowHours = dryWindow / (60 * 60 * 1000);
+          const dryWindowStr = dryWindowHours >= 1 ? `${dryWindowHours} Stunden` : `${dryWindow / (60 * 1000)} Minuten`;
+
           if (dryWindow > searchWindow) {
             console.warn(`Warnung: Trocken-Fenster (${dryWindow / 60000} Minuten) ist größer als Suchzeitraum (${searchWindow / 3600} Stunden). Suche wird auf Suchzeitraum beschränkt.`);
           }
@@ -857,12 +861,12 @@
             console.groupEnd();
 
             const timeStr = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-            const rainTimeStr = nextRainTime ? nextRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : 'unbekannt';
-            showResult(`🚲 Von jetzt bis zum Ziel trocken ab ${timeStr}, Regen erwartet ab ${rainTimeStr}`, 'success');
+            const rainTimeStr = nextRainTime ? nextRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : 'kein Regen erwartet';
+            showResult(`🚲 Von jetzt, ${timeStr} bis zum Ziel in ${dryWindowStr} trocken, ${rainTimeStr}`, 'success');
             console.log('Ergebnis:', {
               Trockenes_Zeitfenster: timeStr,
               Nächstes_Regenfenster: rainTimeStr,
-              Nachricht: `Von jetzt bis zum Ziel trocken ab ${timeStr}, Regen erwartet ab ${rainTimeStr}`
+              Nachricht: `Von jetzt, ${timeStr} bis zum Ziel in ${dryWindowStr} trocken, ${rainTimeStr}`
             });
             console.groupEnd();
             return;
@@ -906,12 +910,12 @@
             console.groupEnd();
 
             const timeStr = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-            const rainTimeStr = nextRainTime ? nextRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : 'unbekannt';
-            showResult(`🚲 Jetzt losfahren! Trocken ab ${timeStr}, Regen erwartet ab ${rainTimeStr}`, 'success');
+            const rainTimeStr = nextRainTime ? nextRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : 'kein Regen erwartet';
+            showResult(`🚲 Von jetzt, ${timeStr} bis zum Ziel in ${dryWindowStr} trocken, ${rainTimeStr}`, 'success');
             console.log('Ergebnis:', {
               Trockenes_Zeitfenster: timeStr,
               Nächstes_Regenfenster: rainTimeStr,
-              Nachricht: `Jetzt losfahren, trocken ab ${timeStr}, Regen erwartet ab ${rainTimeStr}`
+              Nachricht: `Von jetzt, ${timeStr} bis zum Ziel in ${dryWindowStr} trocken, ${rainTimeStr}`
             });
             console.groupEnd();
             console.groupEnd();
@@ -943,14 +947,14 @@
               const precip = await getPrecipAtTime(point.lat, point.lng, timeAtPoint);
               if (precip === null) { 
                 showResult('Suche...', 'muted'); 
-                console.log('Suche Wetterdaten für:', { lat: point.lat(), lng: point.lng(), time: timeAtPoint.toLocaleString('de-DE') });
+                console.log('Suche Wetterdaten für:', { lat: point.lat, lng: point.lng, time: timeAtPoint.toLocaleString('de-DE') });
                 console.groupEnd();
                 console.groupEnd();
                 console.groupEnd();
                 return; 
               }
               console.log(`Niederschlag bei ${timeAtPoint.toLocaleTimeString('de-DE')}:`, {
-                Koordinaten: { lat: point.lat(), lng: point.lng() },
+                Koordinaten: { lat: point.lat, lng: point.lng },
                 Niederschlag: precip.toFixed(1) + ' mm/h',
                 Akzeptiert: precip <= limit ? 'Ja' : 'Nein (Regen)'
               });
@@ -999,13 +1003,13 @@
 
           if (firstDryTime) {
             const timeStr = firstDryTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-            const rainTimeStr = nextRainTime ? nextRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : 'unbekannt';
-            showResult(`🌧 Regen auf der Strecke um ${firstRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} — trockenes Zeitfenster ab ${timeStr}, Regen erwartet ab ${rainTimeStr}`, 'muted');
+            const rainTimeStr = nextRainTime ? nextRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : 'kein Regen erwartet';
+            showResult(`🌧 Regen auf der Strecke um ${firstRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} — trockenes Zeitfenster ab ${timeStr}, ${rainTimeStr}`, 'muted');
             console.log('Ergebnis:', {
               Erster_Regen: firstRainTime.toLocaleString('de-DE'),
               Trockenes_Zeitfenster: firstDryTime.toLocaleString('de-DE'),
               Nächstes_Regenfenster: rainTimeStr,
-              Nachricht: `Regen um ${firstRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} — trockenes Zeitfenster ab ${timeStr}, Regen erwartet ab ${rainTimeStr}`
+              Nachricht: `Regen um ${firstRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} — trockenes Zeitfenster ab ${timeStr}, ${rainTimeStr}`
             });
           } else {
             showResult(`🌧 Kein trockenes Zeitfenster innerhalb der nächsten ${(searchWindow / 3600)} Stunden`, 'muted');
