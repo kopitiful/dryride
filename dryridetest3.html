@@ -236,7 +236,7 @@
         <h1>DryRide</h1>
         <div class="sub">Trocken & smart radeln — Benachrichtigungen 1 h vorher</div>
       </div>
-      <button id="notifyPermissionBtn" class="small-btn">🔔 Benachrichtigungen</button>
+      <button id="notifyPermissionBtn" class="small-btn">🔔 enachrichtigungen</button>
     </header>
     <div class="tab-nav">
       <button class="tab-btn active" data-tab="adhoc">Ad-hoc</button>
@@ -487,7 +487,7 @@
       const endpoint = timeDiffHours <= 2 ? 'nowcast' : 'harmonie';
       const url = `https://api.dataplatform.knmi.nl/open-data/v1/forecast/${endpoint}/precipitation?lat=${lat}&lon=${lng}`;
       const response = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${KNMI_API_KEY}` },
+        headers: { 'Authorization': `Bearer ${eyJvcmciOiI1ZTU1NGUxOTI3NGE5NjAwMDEyYTNlYjEiLCJpZCI6IjQxZjM1ZmE0ZWM2MTRiOWI4Mzc2NDM4MmM1NjdiOGIyIiwiaCI6Im11cm11cjEyOCJ9}` },
         cache: 'no-store'
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
