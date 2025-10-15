@@ -366,6 +366,8 @@
   const KEY_HOME = 'dryride_home_v1';
   const KEY_START = 'dryride_start_v1';
   let acHome, acStart, acRideOrigin, acRideDest;
+  const CACHE = {};
+  const KNMI_API_KEY = '<DEIN_KNMI_API_KEY>'; // *** HIER DEINEN KNMI-SCHLÜSSEL EINFÜGEN! ***
 
   // Tab-Navigation
   document.querySelectorAll('.tab-btn').forEach(button => {
@@ -440,6 +442,7 @@
     rides.push(r);
     saveRides(rides);
     clearRideForm();
+    showResult('Route gespeichert!');
   }
 
   function deleteRide(id) {
@@ -448,8 +451,12 @@
   }
 
   async function getOpenMeteoPrecip(lat, lng, forecastTime) {
+    const cacheKey = `openmeteo_${lat}_${lng}_${Math.floor(forecastTime.getTime() / (5*60*1000))}`;
+    if (CACHE[cacheKey] && Date.now() - CACHE[cacheKey].ts < 5*60*1000) {
+      return CACHE[cacheKey].data;
+    }
     try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=precipitation&forecast_days=1`;
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=precipitation,weathercode&forecast_days=2`;
       const res = await fetch(url);
       const data = await res.json();
       let closestIdx = 0, minDiff = 1e12;
@@ -457,7 +464,12 @@
         const diff = Math.abs(new Date(t) - forecastTime);
         if (diff < minDiff) { minDiff = diff; closestIdx = i; }
       });
-      return data.hourly.precipitation[closestIdx];
+      const result = {
+        precip: data.hourly.precipitation[closestIdx],
+        weatherCode: data.hourly.weathercode[closestIdx]
+      };
+      CACHE[cacheKey] = { data: result, ts: Date.now() };
+      return result;
     } catch (e) {
       console.error('Open-Meteo API Fehler:', e);
       return null;
@@ -465,12 +477,20 @@
   }
 
   async function getKNMIPrecip(lat, lng, forecastTime) {
+    const cacheKey = `knmi_${lat}_${lng}_${Math.floor(forecastTime.getTime() / (5*60*1000))}`;
+    if (CACHE[cacheKey] && Date.now() - CACHE[cacheKey].ts < 5*60*1000) {
+      return CACHE[cacheKey].data;
+    }
     try {
       const now = new Date();
       const timeDiffHours = (forecastTime - now) / (1000 * 3600);
       const endpoint = timeDiffHours <= 2 ? 'nowcast' : 'harmonie';
-      const url = `https://api.knmi.nl/forecast/${endpoint}/precipitation?lat=${lat}&lon=${lng}`;
-      const response = await fetch(url, { cache: 'no-store' });
+      const url = `https://api.dataplatform.knmi.nl/open-data/v1/forecast/${endpoint}/precipitation?lat=${lat}&lon=${lng}`;
+      const response = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${KNMI_API_KEY}` },
+        cache: 'no-store'
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       let closestPrecip = 0;
       if (data.precipitation && data.time) {
@@ -483,24 +503,40 @@
           }
         }
       }
-      return closestPrecip;
+      const result = { precip: closestPrecip };
+      CACHE[cacheKey] = { data: result, ts: Date.now() };
+      return result;
     } catch (e) {
-      console.error('KNMI API Fehler:', e);
+      console.error('KNMI API Fehler:', e.message);
       return null;
     }
   }
 
+  function isRain(rainLevel, precip, weatherCode) {
+    if (precip > rainLevel) return true;
+    if (rainLevel === 0 && weatherCode) {
+      // Drizzle Codes: 300-399 (leichter Fieselregen)
+      return weatherCode >= 300 && weatherCode <= 599;
+    }
+    return false;
+  }
+
   async function getPrecipAtTime(lat, lng, forecastTime) {
-    const openMeteoPrecip = await getOpenMeteoPrecip(lat, lng, forecastTime);
-    const knmiPrecip = await getKNMIPrecip(lat, lng, forecastTime);
-    if (openMeteoPrecip === null && knmiPrecip === null) return null;
-    const precip = Math.max(openMeteoPrecip || 0, knmiPrecip || 0);
-    console.log(`Niederschlagsabfrage bei ${forecastTime.toLocaleTimeString('de-DE')}:`, {
-      OpenMeteo: openMeteoPrecip !== null ? openMeteoPrecip.toFixed(1) + ' mm/h' : 'Fehler',
-      KNMI: knmiPrecip !== null ? knmiPrecip.toFixed(1) + ' mm/h' : 'Fehler',
-      Ergebnis: precip.toFixed(1) + ' mm/h'
+    const openMeteo = await getOpenMeteoPrecip(lat, lng, forecastTime);
+    const knmi = await getKNMIPrecip(lat, lng, forecastTime);
+    const precip = Math.max(openMeteo?.precip || 0, knmi?.precip || 0);
+    const weatherCode = openMeteo?.weatherCode || 0;
+    const rainDetected = isRain(0, precip, weatherCode) || isRain(0.2, precip, weatherCode);
+    console.group(`Niederschlagsabfrage ${forecastTime.toLocaleTimeString('de-DE')}:`);
+    console.log({
+      OpenMeteo: `${(openMeteo?.precip || 0).toFixed(1)} mm/h, Code: ${openMeteo?.weatherCode || '—'}`,
+      KNMI: `${(knmi?.precip || 0).toFixed(1)} mm/h`,
+      Ergebnis: `${precip.toFixed(1)} mm/h`,
+      Fieselregen: weatherCode >= 300 && weatherCode <= 399 ? 'JA' : 'Nein',
+      Akzeptiert: rainDetected ? 'NEIN (Regen)' : 'JA'
     });
-    return precip;
+    console.groupEnd();
+    return { precip, weatherCode, isRain: rainDetected };
   }
 
   async function updateCurrentPrecipDisplay() {
@@ -512,173 +548,18 @@
       if (status === 'OK' && results[0]) {
         const loc = results[0].geometry.location;
         const now = new Date();
-        console.group('Aktueller Niederschlag für: ' + startVal);
-        console.log('Koordinaten:', { lat: loc.lat(), lng: loc.lng() });
-        console.log('Zeitpunkt:', now.toLocaleString('de-DE'));
-        const precip = await getPrecipAtTime(loc.lat(), loc.lng(), now);
-        if (precip === null) {
+        console.group('🔍 Aktueller Niederschlag: ' + startVal);
+        const { precip, weatherCode, isRain } = await getPrecipAtTime(loc.lat(), loc.lng(), now);
+        if (precip === undefined) {
           showResult('Suche...', 'muted');
-          console.log('Suche Wetterdaten für:', { lat: loc.lat(), lng: loc.lng(), time: now.toLocaleString('de-DE') });
           console.groupEnd();
           return;
         }
         const limit = parseFloat(document.getElementById('rainLevel').value);
         const dryWindow = parseInt(document.getElementById('dryWindow').value) * 60 * 1000;
         const searchWindow = parseFloat(document.getElementById('searchWindow').value) * 3600 * 1000;
-        console.log('Einstellungen:', {
-          Niederschlag: precip.toFixed(1) + ' mm/h',
-          Akzeptiert: precip <= limit ? 'Ja' : 'Nein (Regen)',
-          Grenzwert: limit + ' mm/h',
-          TrockenFenster: (dryWindow / 60000) + ' Minuten',
-          Suchzeitraum: (searchWindow / 3600) + ' Stunden'
-        });
-        if (dryWindow > searchWindow) {
-          console.warn(`Warnung: Trocken-Fenster (${dryWindow / 60000} Minuten) ist größer als Suchzeitraum (${searchWindow / 3600} Stunden). Suche wird auf Suchzeitraum beschränkt.`);
-        }
-        if (precip <= limit) {
-          let isDryWindow = true;
-          let firstRainTime = null;
-          console.group('Trocken-Fenster-Prüfung (Startpunkt)');
-          for (let offset = 0; offset <= Math.min(dryWindow, searchWindow); offset += 5 * 60 * 1000) {
-            const checkTime = new Date(now.getTime() + offset);
-            const checkPrecip = await getPrecipAtTime(loc.lat(), loc.lng(), checkTime);
-            if (checkPrecip === null) {
-              showResult('Suche...', 'muted');
-              console.log('Suche Wetterdaten für:', { lat: loc.lat(), lng: loc.lng(), time: checkTime.toLocaleString('de-DE') });
-              console.groupEnd();
-              console.groupEnd();
-              return;
-            }
-            console.log(`Niederschlag bei ${checkTime.toLocaleTimeString('de-DE')}:`, {
-              Niederschlag: checkPrecip.toFixed(1) + ' mm/h',
-              Akzeptiert: checkPrecip <= limit ? 'Ja' : 'Nein (Regen)'
-            });
-            if (checkPrecip > limit) {
-              isDryWindow = false;
-              firstRainTime = checkTime;
-              break;
-            }
-          }
-          console.groupEnd();
-          if (isDryWindow) {
-            let nextRainTime = null;
-            console.group('Suche nach nächstem Regenfenster');
-            for (let offset = dryWindow + 5 * 60 * 1000; offset <= searchWindow; offset += 5 * 60 * 1000) {
-              const checkTime = new Date(now.getTime() + offset);
-              const checkPrecip = await getPrecipAtTime(loc.lat(), loc.lng(), checkTime);
-              if (checkPrecip === null) {
-                showResult('Suche...', 'muted');
-                console.log('Suche Wetterdaten für:', { lat: loc.lat(), lng: loc.lng(), time: checkTime.toLocaleString('de-DE') });
-                console.groupEnd();
-                console.groupEnd();
-                return;
-              }
-              console.log(`Niederschlag bei ${checkTime.toLocaleTimeString('de-DE')}:`, {
-                Niederschlag: checkPrecip.toFixed(1) + ' mm/h',
-                Akzeptiert: checkPrecip <= limit ? 'Ja' : 'Nein (Regen)'
-              });
-              if (checkPrecip > limit) {
-                nextRainTime = checkTime;
-                break;
-              }
-            }
-            console.groupEnd();
-            const timeStr = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-            const rainTimeStr = nextRainTime ? nextRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : 'kein Regen erwartet';
-            const dryWindowHours = dryWindow / (60 * 60 * 1000);
-            const dryWindowStr = dryWindowHours >= 1 ? `${dryWindowHours} Stunden` : `${dryWindow / (60 * 1000)} Minuten`;
-            showResult(`🚲 Von jetzt, ${timeStr} bis zum Ziel in ${dryWindowStr} trocken, ${rainTimeStr}`, 'success');
-            console.log('Ergebnis:', {
-              Trockenes_Zeitfenster: timeStr,
-              Nächstes_Regenfenster: rainTimeStr,
-              Nachricht: `Von jetzt, ${timeStr} bis zum Ziel in ${dryWindowStr} trocken, ${rainTimeStr}`
-            });
-            console.groupEnd();
-            return;
-          }
-        }
-        console.group(`Suche nach trockenem Zeitfenster (bis ${(searchWindow / 3600)} Stunden)`);
-        const endTime = new Date(now.getTime() + searchWindow);
-        let firstDryTime = null;
-        let nextRainTime = null;
-        const interval = searchWindow <= 0.5 * 3600 * 1000 ? 5 * 60 * 1000 : 3600 * 1000;
-        for (let offset = interval; offset <= searchWindow; offset += interval) {
-          const checkTime = new Date(now.getTime() + offset);
-          console.group(`Prüfung für Startzeit: ${checkTime.toLocaleString('de-DE')}`);
-          let isDryWindow = true;
-          for (let windowOffset = 0; windowOffset <= Math.min(dryWindow, searchWindow - offset); windowOffset += 5 * 60 * 1000) {
-            const windowCheckTime = new Date(checkTime.getTime() + windowOffset);
-            if (windowCheckTime > endTime) {
-              console.log('Zeitpunkt überschreitet Suchzeitraum:', windowCheckTime.toLocaleString('de-DE'));
-              break;
-            }
-            const checkPrecip = await getPrecipAtTime(loc.lat(), loc.lng(), windowCheckTime);
-            if (checkPrecip === null) {
-              showResult('Suche...', 'muted');
-              console.log('Suche Wetterdaten für:', { lat: loc.lat(), lng: loc.lng(), time: windowCheckTime.toLocaleString('de-DE') });
-              console.groupEnd();
-              console.groupEnd();
-              console.groupEnd();
-              return;
-            }
-            console.log(`Niederschlag bei ${windowCheckTime.toLocaleTimeString('de-DE')}:`, {
-              Niederschlag: checkPrecip.toFixed(1) + ' mm/h',
-              Akzeptiert: checkPrecip <= limit ? 'Ja' : 'Nein (Regen)'
-            });
-            if (checkPrecip > limit) {
-              isDryWindow = false;
-              break;
-            }
-          }
-          if (isDryWindow) {
-            firstDryTime = checkTime;
-            console.group('Suche nach nächstem Regenfenster');
-            for (let rainOffset = dryWindow + 5 * 60 * 1000; rainOffset <= searchWindow; rainOffset += 5 * 60 * 1000) {
-              const rainCheckTime = new Date(checkTime.getTime() + rainOffset);
-              if (rainCheckTime > endTime) {
-                console.log('Zeitpunkt überschreitet Suchzeitraum:', rainCheckTime.toLocaleString('de-DE'));
-                break;
-              }
-              const checkPrecip = await getPrecipAtTime(loc.lat(), loc.lng(), rainCheckTime);
-              if (checkPrecip === null) {
-                showResult('Suche...', 'muted');
-                console.log('Suche Wetterdaten für:', { lat: loc.lat(), lng: loc.lng(), time: rainCheckTime.toLocaleString('de-DE') });
-                console.groupEnd();
-                console.groupEnd();
-                console.groupEnd();
-                return;
-              }
-              console.log(`Niederschlag bei ${rainCheckTime.toLocaleTimeString('de-DE')}:`, {
-                Niederschlag: checkPrecip.toFixed(1) + ' mm/h',
-                Akzeptiert: checkPrecip <= limit ? 'Ja' : 'Nein (Regen)'
-              });
-              if (checkPrecip > limit) {
-                nextRainTime = rainCheckTime;
-                break;
-              }
-            }
-            console.groupEnd();
-            break;
-          }
-          console.groupEnd();
-        }
-        console.groupEnd();
-        if (firstDryTime) {
-          const timeStr = firstDryTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-          const rainTimeStr = nextRainTime ? nextRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : 'kein Regen erwartet';
-          const dryWindowHours = dryWindow / (60 * 60 * 1000);
-          const dryWindowStr = dryWindowHours >= 1 ? `${dryWindowHours} Stunden` : `${dryWindow / (60 * 1000)} Minuten`;
-          showResult(`🌧 Aktueller Regen: ${precip.toFixed(1)} mm/h — trockenes Zeitfenster ab ${timeStr}, ${rainTimeStr}`, 'muted');
-          console.log('Ergebnis:', {
-            Aktueller_Niederschlag: precip.toFixed(1) + ' mm/h',
-            Trockenes_Zeitfenster: firstDryTime.toLocaleString('de-DE'),
-            Nächstes_Regenfenster: rainTimeStr,
-            Nachricht: `Aktueller Regen: ${precip.toFixed(1)} mm/h — trockenes Zeitfenster ab ${timeStr}, ${rainTimeStr}`
-          });
-        } else {
-          showResult(`🌧 Aktueller Regen: ${precip.toFixed(1)} mm/h — kein trockenes Zeitfenster innerhalb der nächsten ${(searchWindow / 3600)} Stunden`, 'muted');
-          console.log('Ergebnis:', `Kein trockenes Zeitfenster innerhalb der nächsten ${(searchWindow / 3600)} Stunden`);
-        }
+        const rainType = weatherCode >= 300 && weatherCode <= 399 ? 'Fieselregen' : precip > 0 ? 'Regen' : 'Trocken';
+        showResult(`${isRain ? '🌧' : '☀️'} ${rainType}: ${precip.toFixed(1)} mm/h — ${(isRain && limit === 0) ? 'Warte auf Trockenphase' : 'OK zum Start'}`, isRain ? 'danger' : 'success');
         console.groupEnd();
       }
     });
@@ -708,9 +589,9 @@
       geocoder.geocode({ address: r.destinationAddress }, async function(results, status) {
         if (status === 'OK' && results[0]) {
           const loc = results[0].geometry.location;
-          const p = await getPrecipAtTime(loc.lat(), loc.lng(), new Date());
+          const { precip, isRain } = await getPrecipAtTime(loc.lat(), loc.lng(), new Date());
           const elp = document.getElementById(`precip_${r.id}`);
-          if (elp) elp.innerHTML = p !== null ? `🌦 Aktueller Regen: ${p.toFixed(1)} mm/h` : '🌦 Suche...';
+          if (elp) elp.innerHTML = precip !== undefined ? `${isRain ? '🌧' : '☀️'} ${precip.toFixed(1)} mm/h` : '🌦 Fehler';
         }
       });
     }
@@ -728,296 +609,104 @@
     document.querySelector('.tab-btn[data-tab="routes"]').click();
   }
 
-  function escapeHtml(text) { const div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
-
   async function calculateSafeRide() {
-    showResult('Berechne…');
+    showResult('🚴 Berechne optimale Startzeit...');
     const startVal = document.getElementById('startAddress').value;
     const destVal = document.getElementById('homeAddress').value;
     if (!startVal || !destVal) { showResult('Bitte Start und Ziel eingeben', 'danger'); return; }
-    console.group('DryRide Berechnung: ' + startVal + ' → ' + destVal);
+    
+    console.group('🗺️ DryRide Berechnung: ' + startVal + ' → ' + destVal);
     const geocoder = new google.maps.Geocoder();
     geocoder.geocode({ address: startVal }, async function(results1, status1) {
-      if (status1 !== 'OK' || !results1[0]) { 
-        showResult('Startadresse nicht gefunden', 'danger'); 
-        console.error('Startadresse nicht gefunden:', startVal);
-        console.groupEnd();
-        return; 
-      }
+      if (status1 !== 'OK' || !results1[0]) { showResult('Startadresse nicht gefunden', 'danger'); console.groupEnd(); return; }
       const loc1 = results1[0].geometry.location;
-      console.log('Startadresse Koordinaten:', { lat: loc1.lat(), lng: loc1.lng() });
       geocoder.geocode({ address: destVal }, async function(results2, status2) {
-        if (status2 !== 'OK' || !results2[0]) { 
-          showResult('Zieladresse nicht gefunden', 'danger'); 
-          console.error('Zieladresse nicht gefunden:', destVal);
-          console.groupEnd();
-          return; 
-        }
+        if (status2 !== 'OK' || !results2[0]) { showResult('Zieladresse nicht gefunden', 'danger'); console.groupEnd(); return; }
         const loc2 = results2[0].geometry.location;
-        console.log('Zieladresse Koordinaten:', { lat: loc2.lat(), lng: loc2.lng() });
         const directionsService = new google.maps.DirectionsService();
         directionsService.route({
           origin: startVal,
           destination: destVal,
           travelMode: google.maps.TravelMode.BICYCLING
         }, async (result, status) => {
-          if (status !== 'OK') { 
-            showResult('Route nicht gefunden', 'danger'); 
-            console.error('Route nicht gefunden:', status);
-            console.groupEnd();
-            return; 
-          }
-          const duration = result.routes[0].legs[0].duration.value;
+          if (status !== 'OK') { showResult('Route nicht gefunden', 'danger'); console.groupEnd(); return; }
+          const duration = result.routes[0].legs[0].duration.value * 1000;
           const path = result.routes[0].overview_path;
-          console.log('Route berechnet:', {
-            Fahrdauer_Sekunden: duration,
-            Fahrdauer_Stunden: (duration / 3600).toFixed(2),
-            Anzahl_Zwischenpunkte: path.length
-          });
+          console.log(`Route: ${(duration/60000).toFixed(0)}min, ${path.length} Punkte`);
+          
           const now = new Date();
           const limit = parseFloat(document.getElementById('rainLevel').value);
           const dryWindow = parseInt(document.getElementById('dryWindow').value) * 60 * 1000;
           const searchWindow = parseFloat(document.getElementById('searchWindow').value) * 3600 * 1000;
           const endTime = new Date(now.getTime() + searchWindow);
-          console.log('Einstellungen:', {
-            rainLevel: limit + ' mm/h',
-            dryWindow: (dryWindow / 60000) + ' Minuten',
-            searchWindow: (searchWindow / 3600) + ' Stunden',
-            Startzeit: now.toLocaleString('de-DE'),
-            Endzeit: endTime.toLocaleString('de-DE')
-          });
-          const dryWindowHours = dryWindow / (60 * 60 * 1000);
-          const dryWindowStr = dryWindowHours >= 1 ? `${dryWindowHours} Stunden` : `${dryWindow / (60 * 1000)} Minuten`;
-          if (dryWindow > searchWindow) {
-            console.warn(`Warnung: Trocken-Fenster (${dryWindow / 60000} Minuten) ist größer als Suchzeitraum (${searchWindow / 3600} Stunden). Suche wird auf Suchzeitraum beschränkt.`);
-          }
-          const interval = 5 * 60;
-          const numIntervals = Math.ceil(duration / interval);
+          const dryWindowStr = (dryWindow >= 3600000) ? `${dryWindow/3600000} Stunden` : `${dryWindow/60000} Minuten`;
+          
+          // Prüfe aktuelles Fenster
+          let isNowDry = true;
           const points = [];
-          console.group('5-Minuten-Abschnitte');
-          for (let i = 0; i <= numIntervals; i++) {
-            const progress = Math.min(i * interval / duration, 1);
+          for (let i = 0; i <= Math.ceil(duration / (5*60*1000)); i++) {
+            const progress = Math.min(i * 5 * 60 * 1000 / duration, 1);
             const index = Math.floor(progress * (path.length - 1));
             const point = path[index];
-            const timeAtPoint = new Date(now.getTime() + progress * duration * 1000);
+            const timeAtPoint = new Date(now.getTime() + progress * duration);
             points.push({ lat: point.lat(), lng: point.lng(), time: timeAtPoint });
-            console.log(`Abschnitt ${i}:`, {
-              Fortschritt: (progress * 100).toFixed(2) + '%',
-              Koordinaten: { lat: point.lat(), lng: point.lng() },
-              Zeitpunkt: timeAtPoint.toLocaleString('de-DE')
-            });
           }
-          console.groupEnd();
-          console.group('Niederschlagsprüfung');
-          let firstRainTime = null;
-          let firstRainPoint = null;
+          
           for (const point of points) {
-            if (point.time > endTime) {
-              console.log('Zeitpunkt überschreitet Suchzeitraum:', point.time.toLocaleString('de-DE'));
-              break;
-            }
-            const precip = await getPrecipAtTime(point.lat, point.lng, point.time);
-            if (precip === null) { 
-              showResult('Suche...', 'muted'); 
-              console.log('Suche Wetterdaten für:', { lat: point.lat, lng: point.lng, time: point.time.toLocaleString('de-DE') });
-              console.groupEnd();
-              console.groupEnd();
-              return; 
-            }
-            console.log(`Niederschlag bei ${point.time.toLocaleTimeString('de-DE')}:`, {
-              Koordinaten: { lat: point.lat, lng: point.lng },
-              Niederschlag: precip.toFixed(1) + ' mm/h',
-              Akzeptiert: precip <= limit ? 'Ja' : 'Nein (Regen)'
-            });
-            if (precip > limit) {
-              firstRainTime = point.time;
-              firstRainPoint = point;
-              break;
-            }
+            const { isRain: pointRain } = await getPrecipAtTime(point.lat, point.lng, point.time);
+            if (pointRain) { isNowDry = false; break; }
           }
-          console.groupEnd();
-          if (!firstRainTime) {
-            console.group('Suche nach nächstem Regenfenster');
-            let nextRainTime = null;
-            for (let offset = duration * 1000 + 5 * 60 * 1000; offset <= searchWindow; offset += 5 * 60 * 1000) {
+          
+          if (isNowDry) {
+            let nextRain = null;
+            for (let offset = duration + 5*60*1000; offset <= searchWindow; offset += 5*60*1000) {
               const checkTime = new Date(now.getTime() + offset);
-              const progress = Math.min((offset - duration * 1000) / (duration * 1000), 1);
-              const index = Math.floor(progress * (path.length - 1));
-              const point = path[index] || path[path.length - 1];
-              const precip = await getPrecipAtTime(point.lat(), point.lng(), checkTime);
-              if (precip === null) {
-                showResult('Suche...', 'muted');
-                console.log('Suche Wetterdaten für:', { lat: point.lat(), lng: point.lng(), time: checkTime.toLocaleString('de-DE') });
-                console.groupEnd();
-                console.groupEnd();
-                return;
-              }
-              console.log(`Niederschlag bei ${checkTime.toLocaleTimeString('de-DE')}:`, {
-                Koordinaten: { lat: point.lat(), lng: point.lng() },
-                Niederschlag: precip.toFixed(1) + ' mm/h',
-                Akzeptiert: precip <= limit ? 'Ja' : 'Nein (Regen)'
-              });
-              if (precip > limit) {
-                nextRainTime = checkTime;
-                break;
-              }
+              if (checkTime > endTime) break;
+              const { isRain: rainCheck } = await getPrecipAtTime(loc2.lat(), loc2.lng(), checkTime);
+              if (rainCheck) { nextRain = checkTime; break; }
             }
-            console.groupEnd();
             const timeStr = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-            const rainTimeStr = nextRainTime ? nextRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : 'kein Regen erwartet';
-            showResult(`🚲 Von jetzt, ${timeStr} bis zum Ziel in ${dryWindowStr} trocken, ${rainTimeStr}`, 'success');
-            console.log('Ergebnis:', {
-              Trockenes_Zeitfenster: timeStr,
-              Nächstes_Regenfenster: rainTimeStr,
-              Nachricht: `Von jetzt, ${timeStr} bis zum Ziel in ${dryWindowStr} trocken, ${rainTimeStr}`
-            });
+            const rainStr = nextRain ? nextRain.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : 'kein Regen erwartet';
+            showResult(`🚲 Von jetzt, ${timeStr} bis zum Ziel in ${dryWindowStr} trocken, ${rainStr}`, 'success');
             console.groupEnd();
             return;
           }
-          console.group('Trocken-Fenster-Prüfung');
-          const windowEndTime = new Date(firstRainTime.getTime() - Math.min(dryWindow, searchWindow));
-          console.log('Erster Regen:', {
-            Zeitpunkt: firstRainTime.toLocaleString('de-DE'),
-            Koordinaten: { lat: firstRainPoint.lat, lng: firstRainPoint.lng },
-            TrockenFenster_Erfüllt: windowEndTime > now ? 'Ja' : 'Nein'
-          });
-          if (windowEndTime > now) {
-            console.group('Suche nach nächstem Regenfenster');
-            let nextRainTime = null;
-            for (let offset = firstRainTime.getTime() - now.getTime() + 5 * 60 * 1000; offset <= searchWindow; offset += 5 * 60 * 1000) {
-              const checkTime = new Date(now.getTime() + offset);
-              const progress = Math.min((offset - duration * 1000) / (duration * 1000), 1);
-              const index = Math.floor(progress * (path.length - 1));
-              const point = path[index] || path[path.length - 1];
-              const precip = await getPrecipAtTime(point.lat(), point.lng(), checkTime);
-              if (precip === null) {
-                showResult('Suche...', 'muted');
-                console.log('Suche Wetterdaten für:', { lat: point.lat(), lng: point.lng(), time: checkTime.toLocaleString('de-DE') });
-                console.groupEnd();
-                console.groupEnd();
-                console.groupEnd();
-                return;
-              }
-              console.log(`Niederschlag bei ${checkTime.toLocaleTimeString('de-DE')}:`, {
-                Koordinaten: { lat: point.lat(), lng: point.lng() },
-                Niederschlag: precip.toFixed(1) + ' mm/h',
-                Akzeptiert: precip <= limit ? 'Ja' : 'Nein (Regen)'
-              });
-              if (precip > limit) {
-                nextRainTime = checkTime;
-                break;
-              }
-            }
-            console.groupEnd();
-            const timeStr = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-            const rainTimeStr = nextRainTime ? nextRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : 'kein Regen erwartet';
-            showResult(`🚲 Von jetzt, ${timeStr} bis zum Ziel in ${dryWindowStr} trocken, ${rainTimeStr}`, 'success');
-            console.log('Ergebnis:', {
-              Trockenes_Zeitfenster: timeStr,
-              Nächstes_Regenfenster: rainTimeStr,
-              Nachricht: `Von jetzt, ${timeStr} bis zum Ziel in ${dryWindowStr} trocken, ${rainTimeStr}`
-            });
-            console.groupEnd();
-            console.groupEnd();
-            return;
-          }
-          console.groupEnd();
-          console.group(`Suche nach trockenem Zeitfenster (bis ${(searchWindow / 3600)} Stunden)`);
+          
+          // Suche nächstes trockenes Fenster
           let firstDryTime = null;
-          let nextRainTime = null;
-          const searchInterval = searchWindow <= 0.5 * 3600 * 1000 ? 5 * 60 * 1000 : 3600 * 1000;
-          for (let offset = searchInterval; offset <= searchWindow; offset += searchInterval) {
+          for (let offset = 5*60*1000; offset <= searchWindow; offset += 5*60*1000) {
             const startTime = new Date(now.getTime() + offset);
-            if (startTime > endTime) {
-              console.log('Startzeit überschreitet Suchzeitraum:', startTime.toLocaleString('de-DE'));
-              break;
-            }
+            if (startTime > endTime) break;
             let isDry = true;
-            console.group(`Prüfung für Startzeit: ${startTime.toLocaleString('de-DE')}`);
-            for (let i = 0; i <= numIntervals; i++) {
-              const progress = Math.min(i * interval / duration, 1);
-              const index = Math.floor(progress * (path.length - 1));
-              const point = path[index];
-              const timeAtPoint = new Date(startTime.getTime() + progress * duration * 1000);
-              if (timeAtPoint > endTime) {
-                console.log('Zeitpunkt überschreitet Suchzeitraum:', timeAtPoint.toLocaleString('de-DE'));
-                break;
-              }
-              const precip = await getPrecipAtTime(point.lat, point.lng, timeAtPoint);
-              if (precip === null) { 
-                showResult('Suche...', 'muted'); 
-                console.log('Suche Wetterdaten für:', { lat: point.lat, lng: point.lng, time: timeAtPoint.toLocaleString('de-DE') });
-                console.groupEnd();
-                console.groupEnd();
-                console.groupEnd();
-                return; 
-              }
-              console.log(`Niederschlag bei ${timeAtPoint.toLocaleTimeString('de-DE')}:`, {
-                Koordinaten: { lat: point.lat, lng: point.lng },
-                Niederschlag: precip.toFixed(1) + ' mm/h',
-                Akzeptiert: precip <= limit ? 'Ja' : 'Nein (Regen)'
-              });
-              if (precip > limit) {
-                isDry = false;
-                break;
-              }
+            for (const point of points) {
+              const checkTime = new Date(startTime.getTime() + (point.time - now));
+              if (checkTime > endTime) break;
+              const { isRain: pointRain } = await getPrecipAtTime(point.lat, point.lng, checkTime);
+              if (pointRain) { isDry = false; break; }
             }
-            if (isDry) {
-              firstDryTime = startTime;
-              console.group('Suche nach nächstem Regenfenster');
-              for (let rainOffset = duration * 1000 + 5 * 60 * 1000; rainOffset <= searchWindow; rainOffset += 5 * 60 * 1000) {
-                const checkTime = new Date(startTime.getTime() + rainOffset);
-                if (checkTime > endTime) {
-                  console.log('Zeitpunkt überschreitet Suchzeitraum:', checkTime.toLocaleString('de-DE'));
-                  break;
-                }
-                const progress = Math.min((rainOffset - duration * 1000) / (duration * 1000), 1);
-                const index = Math.floor(progress * (path.length - 1));
-                const point = path[index] || path[path.length - 1];
-                const precip = await getPrecipAtTime(point.lat(), point.lng(), checkTime);
-                if (precip === null) {
-                  showResult('Suche...', 'muted');
-                  console.log('Suche Wetterdaten für:', { lat: point.lat(), lng: point.lng(), time: checkTime.toLocaleString('de-DE') });
-                  console.groupEnd();
-                  console.groupEnd();
-                  console.groupEnd();
-                  return;
-                }
-                console.log(`Niederschlag bei ${checkTime.toLocaleTimeString('de-DE')}:`, {
-                  Koordinaten: { lat: point.lat(), lng: point.lng() },
-                  Niederschlag: precip.toFixed(1) + ' mm/h',
-                  Akzeptiert: precip <= limit ? 'Ja' : 'Nein (Regen)'
-                });
-                if (precip > limit) {
-                  nextRainTime = checkTime;
-                  break;
-                }
-              }
-              console.groupEnd();
-              break;
-            }
-            console.groupEnd();
+            if (isDry) { firstDryTime = startTime; break; }
           }
-          console.groupEnd();
+          
           if (firstDryTime) {
             const timeStr = firstDryTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-            const rainTimeStr = nextRainTime ? nextRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : 'kein Regen erwartet';
-            showResult(`🌧 Regen auf der Strecke um ${firstRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} — trockenes Zeitfenster ab ${timeStr}, ${rainTimeStr}`, 'muted');
-            console.log('Ergebnis:', {
-              Erster_Regen: firstRainTime.toLocaleString('de-DE'),
-              Trockenes_Zeitfenster: firstDryTime.toLocaleString('de-DE'),
-              Nächstes_Regenfenster: rainTimeStr,
-              Nachricht: `Regen um ${firstRainTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} — trockenes Zeitfenster ab ${timeStr}, ${rainTimeStr}`
-            });
+            let nextRain = null;
+            for (let offset = duration + 5*60*1000; offset <= searchWindow; offset += 5*60*1000) {
+              const checkTime = new Date(firstDryTime.getTime() + offset);
+              if (checkTime > endTime) break;
+              const { isRain: rainCheck } = await getPrecipAtTime(loc2.lat(), loc2.lng(), checkTime);
+              if (rainCheck) { nextRain = checkTime; break; }
+            }
+            const rainStr = nextRain ? nextRain.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : 'kein Regen erwartet';
+            showResult(`🌧 Leichter Fieselregen jetzt — trockenes Zeitfenster ab ${timeStr}, ${rainStr}`, 'muted');
           } else {
-            showResult(`🌧 Kein trockenes Zeitfenster innerhalb der nächsten ${(searchWindow / 3600)} Stunden`, 'muted');
-            console.log('Ergebnis:', `Kein trockenes Zeitfenster innerhalb der nächsten ${(searchWindow / 3600)} Stunden`);
+            showResult(`🌧 Kein trockenes Zeitfenster in den nächsten ${(searchWindow/3600000).toFixed(1)} Stunden`, 'danger');
           }
           console.groupEnd();
         });
       });
     });
   }
+
   // Init
   renderRides();
   </script>
