@@ -365,6 +365,7 @@
   const KEY_START = 'dryride_start_v1';
   let acHome, acStart, acRideOrigin, acRideDest;
   const CACHE = {};
+  let resultInterval = null;
 
   // Tab-Navigation
   document.querySelectorAll('.tab-btn').forEach(button => {
@@ -380,6 +381,16 @@
     const el = document.getElementById('result');
     el.innerHTML = msg;
     el.className = type ? type : 'muted';
+  }
+
+  function toggleResult(currentStatusMsg, windowsMsg, type) {
+    let isCurrentStatus = true;
+    showResult(currentStatusMsg, type);
+    if (resultInterval) clearInterval(resultInterval);
+    resultInterval = setInterval(() => {
+      isCurrentStatus = !isCurrentStatus;
+      showResult(isCurrentStatus ? currentStatusMsg : windowsMsg, type);
+    }, 10000); // Wechsel alle 10 Sekunden
   }
 
   function whenMapsReady(cb) {
@@ -621,8 +632,9 @@
             if (pointRain) { isNowDry = false; break; }
           }
 
-          // Sammle alle trockenen Fenster
+          // Sammle trockene und nasse Fenster
           const dryWindows = [];
+          const wetWindows = [];
           for (let offset = 0; offset <= searchWindow; offset += dryWindow) {
             const startTime = new Date(now.getTime() + offset);
             if (startTime.getTime() + duration > endTime.getTime()) break;
@@ -633,14 +645,27 @@
               const { isRain: pointRain } = await getPrecipAtTime(point.lat, point.lng, checkTime);
               if (pointRain) { isDry = false; break; }
             }
+            const endTimeWindow = new Date(startTime.getTime() + dryWindow);
             if (isDry) {
-              const endDryTime = new Date(startTime.getTime() + dryWindow);
-              dryWindows.push({ start: startTime, end: endDryTime });
+              dryWindows.push({ start: startTime, end: endTimeWindow });
+            } else {
+              wetWindows.push({ start: startTime, end: endTimeWindow });
             }
           }
 
-          // Ergebnis anzeigen
-          if (isNowDry) {
+          // Erstelle Nachrichten
+          let currentStatusMsg = '';
+          let windowsMsg = '';
+          let type = 'muted';
+
+          if (wetWindows.length === 0) {
+            // Fall 1: Alles trocken
+            const timeStr = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+            currentStatusMsg = `🚲 Jetzt (${timeStr}) bis Ziel in ${dryWindowStr} trocken.`;
+            windowsMsg = `☀️ Das gesamte Zeitfenster (${(searchWindow/3600000).toFixed(1)} Stunden) ist trocken.`;
+            type = 'success';
+          } else if (isNowDry) {
+            // Fall 2: Jetzt trocken, aber Regen später
             const timeStr = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
             let nextRain = null;
             for (let offset = duration + 5*60*1000; offset <= searchWindow; offset += 5*60*1000) {
@@ -650,14 +675,31 @@
               if (rainCheck) { nextRain = checkTime; break; }
             }
             const rainStr = nextRain ? nextRain.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : 'kein Regen erwartet';
-            const windowsList = dryWindows.length > 0 ? dryWindows.map(w => `${w.start.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}–${w.end.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`).join(', ') : 'keine weiteren';
-            showResult(`🚲 Jetzt (${timeStr}) bis Ziel in ${dryWindowStr} trocken, nächster Regen: ${rainStr}.<br>Weitere trockene Fenster: ${windowsList}`, 'success');
-          } else if (dryWindows.length > 0) {
-            const windowsList = dryWindows.map(w => `${w.start.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}–${w.end.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`).join(', ');
-            showResult(`🌧 Fieselregen jetzt. Trockene Zeitfenster: ${windowsList}`, 'muted');
+            currentStatusMsg = `🚲 Jetzt (${timeStr}) bis Ziel in ${dryWindowStr} trocken, nächster Regen: ${rainStr}.`;
+            if (dryWindows.length > wetWindows.length) {
+              const wetList = wetWindows.length > 0 ? wetWindows.map(w => `${w.start.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}–${w.end.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`).join(', ');
+              windowsMsg = `🌧 Regenfenster: ${wetList || 'keine'}.`;
+            } else {
+              const dryList = dryWindows.length > 0 ? dryWindows.map(w => `${w.start.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}–${w.end.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`).join(', ');
+              windowsMsg = `☀️ Trockene Zeitfenster: ${dryList || 'keine'}.`;
+            }
+            type = 'success';
           } else {
-            showResult(`🌧 Kein trockenes Zeitfenster in den nächsten ${(searchWindow/3600000).toFixed(1)} Stunden`, 'danger');
+            // Fall 3: Jetzt Regen
+            if (dryWindows.length > wetWindows.length) {
+              const wetList = wetWindows.length > 0 ? wetWindows.map(w => `${w.start.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}–${w.end.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`).join(', ');
+              currentStatusMsg = `🌧 Fieselregen jetzt.`;
+              windowsMsg = `🌧 Regenfenster: ${wetList || 'keine'}.`;
+            } else {
+              const dryList = dryWindows.length > 0 ? dryWindows.map(w => `${w.start.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}–${w.end.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`).join(', ');
+              currentStatusMsg = `🌧 Fieselregen jetzt.`;
+              windowsMsg = `☀️ Trockene Zeitfenster: ${dryList || 'keine'}.`;
+            }
+            type = 'danger';
           }
+
+          // Wechsel zwischen Nachrichten
+          toggleResult(currentStatusMsg, windowsMsg, type);
           console.groupEnd();
         });
       });
