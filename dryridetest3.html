@@ -236,7 +236,7 @@
         <h1>DryRide</h1>
         <div class="sub">Trocken & smart radeln — Benachrichtigungen 1 h vorher</div>
       </div>
-      <button id="notifyPermissionBtn" class="small-btn">🔔 enachrichtigungen</button>
+      <button id="notifyPermissionBtn" class="small-btn">🔔 Benachrichtigungen</button>
     </header>
     <div class="tab-nav">
       <button class="tab-btn active" data-tab="adhoc">Ad-hoc</button>
@@ -257,7 +257,7 @@
         </div>
         <div class="form-row">
           <div class="field">
-            <label>kzeptierter Niederschlag</label>
+            <label>Akzeptierter Niederschlag</label>
             <select id="rainLevel">
               <option value="0">Kein Niederschlag</option>
               <option value="0.2" selected>0.2 mm/h</option>
@@ -358,16 +358,13 @@
       </div>
     </div>
   </div>
-  <script async
-    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCfmA_2wFMG2eXCJF0stxziBnM4CVNpoB0&libraries=places,directions">
-  </script>
+  <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCfmA_2wFMG2eXCJF0stxziBnM4CVNpoB0&libraries=places,directions"></script>
   <script>
   const KEY_RIDES = 'dryride_rides_v1';
   const KEY_HOME = 'dryride_home_v1';
   const KEY_START = 'dryride_start_v1';
   let acHome, acStart, acRideOrigin, acRideDest;
   const CACHE = {};
-  const KNMI_API_KEY = '<DEIN_KNMI_API_KEY>'; // *** HIER DEINEN KNMI-SCHLÜSSEL EINFÜGEN! ***
 
   // Tab-Navigation
   document.querySelectorAll('.tab-btn').forEach(button => {
@@ -442,7 +439,6 @@
     rides.push(r);
     saveRides(rides);
     clearRideForm();
-    showResult('Route gespeichert!');
   }
 
   function deleteRide(id) {
@@ -477,46 +473,14 @@
   }
 
   async function getKNMIPrecip(lat, lng, forecastTime) {
-    const cacheKey = `knmi_${lat}_${lng}_${Math.floor(forecastTime.getTime() / (5*60*1000))}`;
-    if (CACHE[cacheKey] && Date.now() - CACHE[cacheKey].ts < 5*60*1000) {
-      return CACHE[cacheKey].data;
-    }
-    try {
-      const now = new Date();
-      const timeDiffHours = (forecastTime - now) / (1000 * 3600);
-      const endpoint = timeDiffHours <= 2 ? 'nowcast' : 'harmonie';
-      const url = `https://api.dataplatform.knmi.nl/open-data/v1/forecast/${endpoint}/precipitation?lat=${lat}&lon=${lng}`;
-      const response = await fetch(url, {
-        headers: { 'Authorization': `Bearer $eyJvcmciOiI1ZTU1NGUxOTI3NGE5NjAwMDEyYTNlYjEiLCJpZCI6IjQxZjM1ZmE0ZWM2MTRiOWI4Mzc2NDM4MmM1NjdiOGIyIiwiaCI6Im11cm11cjEyOCJ9` },
-        cache: 'no-store'
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      let closestPrecip = 0;
-      if (data.precipitation && data.time) {
-        let minDiff = Infinity;
-        for (let i = 0; i < data.time.length; i++) {
-          const diff = Math.abs(new Date(data.time[i]) - forecastTime);
-          if (diff < minDiff) {
-            minDiff = diff;
-            closestPrecip = data.precipitation[i];
-          }
-        }
-      }
-      const result = { precip: closestPrecip };
-      CACHE[cacheKey] = { data: result, ts: Date.now() };
-      return result;
-    } catch (e) {
-      console.error('KNMI API Fehler:', e.message);
-      return null;
-    }
+    console.warn('KNMI deaktiviert (HDF5-Parsing nicht im Browser möglich). Nur Open-Meteo verwendet.');
+    return null; // Fallback zu Open-Meteo
   }
 
   function isRain(rainLevel, precip, weatherCode) {
     if (precip > rainLevel) return true;
     if (rainLevel === 0 && weatherCode) {
-      // Drizzle Codes: 300-399 (leichter Fieselregen)
-      return weatherCode >= 300 && weatherCode <= 599;
+      return weatherCode >= 300 && weatherCode <= 599; // Fieselregen (300–399) oder Regen
     }
     return false;
   }
@@ -524,9 +488,10 @@
   async function getPrecipAtTime(lat, lng, forecastTime) {
     const openMeteo = await getOpenMeteoPrecip(lat, lng, forecastTime);
     const knmi = await getKNMIPrecip(lat, lng, forecastTime);
+    if (openMeteo === null && knmi === null) return null;
     const precip = Math.max(openMeteo?.precip || 0, knmi?.precip || 0);
     const weatherCode = openMeteo?.weatherCode || 0;
-    const rainDetected = isRain(0, precip, weatherCode) || isRain(0.2, precip, weatherCode);
+    const rainDetected = isRain(0, precip, weatherCode);
     console.group(`Niederschlagsabfrage ${forecastTime.toLocaleTimeString('de-DE')}:`);
     console.log({
       OpenMeteo: `${(openMeteo?.precip || 0).toFixed(1)} mm/h, Code: ${openMeteo?.weatherCode || '—'}`,
@@ -556,8 +521,6 @@
           return;
         }
         const limit = parseFloat(document.getElementById('rainLevel').value);
-        const dryWindow = parseInt(document.getElementById('dryWindow').value) * 60 * 1000;
-        const searchWindow = parseFloat(document.getElementById('searchWindow').value) * 3600 * 1000;
         const rainType = weatherCode >= 300 && weatherCode <= 399 ? 'Fieselregen' : precip > 0 ? 'Regen' : 'Trocken';
         showResult(`${isRain ? '🌧' : '☀️'} ${rainType}: ${precip.toFixed(1)} mm/h — ${(isRain && limit === 0) ? 'Warte auf Trockenphase' : 'OK zum Start'}`, isRain ? 'danger' : 'success');
         console.groupEnd();
@@ -610,7 +573,7 @@
   }
 
   async function calculateSafeRide() {
-    showResult('🚴 Berechne optimale Startzeit...');
+    showResult('🚴 Berechne trockene Zeitfenster...');
     const startVal = document.getElementById('startAddress').value;
     const destVal = document.getElementById('homeAddress').value;
     if (!startVal || !destVal) { showResult('Bitte Start und Ziel eingeben', 'danger'); return; }
@@ -640,9 +603,8 @@
           const searchWindow = parseFloat(document.getElementById('searchWindow').value) * 3600 * 1000;
           const endTime = new Date(now.getTime() + searchWindow);
           const dryWindowStr = (dryWindow >= 3600000) ? `${dryWindow/3600000} Stunden` : `${dryWindow/60000} Minuten`;
-          
-          // Prüfe aktuelles Fenster
-          let isNowDry = true;
+
+          // Punkte entlang der Route für Niederschlagsprüfung
           const points = [];
           for (let i = 0; i <= Math.ceil(duration / (5*60*1000)); i++) {
             const progress = Math.min(i * 5 * 60 * 1000 / duration, 1);
@@ -651,32 +613,19 @@
             const timeAtPoint = new Date(now.getTime() + progress * duration);
             points.push({ lat: point.lat(), lng: point.lng(), time: timeAtPoint });
           }
-          
+
+          // Prüfe aktuelles Fenster
+          let isNowDry = true;
           for (const point of points) {
             const { isRain: pointRain } = await getPrecipAtTime(point.lat, point.lng, point.time);
             if (pointRain) { isNowDry = false; break; }
           }
-          
-          if (isNowDry) {
-            let nextRain = null;
-            for (let offset = duration + 5*60*1000; offset <= searchWindow; offset += 5*60*1000) {
-              const checkTime = new Date(now.getTime() + offset);
-              if (checkTime > endTime) break;
-              const { isRain: rainCheck } = await getPrecipAtTime(loc2.lat(), loc2.lng(), checkTime);
-              if (rainCheck) { nextRain = checkTime; break; }
-            }
-            const timeStr = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-            const rainStr = nextRain ? nextRain.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : 'kein Regen erwartet';
-            showResult(`🚲 Von jetzt, ${timeStr} bis zum Ziel in ${dryWindowStr} trocken, ${rainStr}`, 'success');
-            console.groupEnd();
-            return;
-          }
-          
-          // Suche nächstes trockenes Fenster
-          let firstDryTime = null;
-          for (let offset = 5*60*1000; offset <= searchWindow; offset += 5*60*1000) {
+
+          // Sammle alle trockenen Fenster
+          const dryWindows = [];
+          for (let offset = 0; offset <= searchWindow; offset += dryWindow) {
             const startTime = new Date(now.getTime() + offset);
-            if (startTime > endTime) break;
+            if (startTime.getTime() + duration > endTime.getTime()) break;
             let isDry = true;
             for (const point of points) {
               const checkTime = new Date(startTime.getTime() + (point.time - now));
@@ -684,20 +633,28 @@
               const { isRain: pointRain } = await getPrecipAtTime(point.lat, point.lng, checkTime);
               if (pointRain) { isDry = false; break; }
             }
-            if (isDry) { firstDryTime = startTime; break; }
+            if (isDry) {
+              const endDryTime = new Date(startTime.getTime() + dryWindow);
+              dryWindows.push({ start: startTime, end: endDryTime });
+            }
           }
-          
-          if (firstDryTime) {
-            const timeStr = firstDryTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+
+          // Ergebnis anzeigen
+          if (isNowDry) {
+            const timeStr = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
             let nextRain = null;
             for (let offset = duration + 5*60*1000; offset <= searchWindow; offset += 5*60*1000) {
-              const checkTime = new Date(firstDryTime.getTime() + offset);
+              const checkTime = new Date(now.getTime() + offset);
               if (checkTime > endTime) break;
               const { isRain: rainCheck } = await getPrecipAtTime(loc2.lat(), loc2.lng(), checkTime);
               if (rainCheck) { nextRain = checkTime; break; }
             }
             const rainStr = nextRain ? nextRain.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : 'kein Regen erwartet';
-            showResult(`🌧 Leichter Fieselregen jetzt — trockenes Zeitfenster ab ${timeStr}, ${rainStr}`, 'muted');
+            const windowsList = dryWindows.length > 0 ? dryWindows.map(w => `${w.start.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}–${w.end.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`).join(', ') : 'keine weiteren';
+            showResult(`🚲 Jetzt (${timeStr}) bis Ziel in ${dryWindowStr} trocken, nächster Regen: ${rainStr}.<br>Weitere trockene Fenster: ${windowsList}`, 'success');
+          } else if (dryWindows.length > 0) {
+            const windowsList = dryWindows.map(w => `${w.start.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}–${w.end.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`).join(', ');
+            showResult(`🌧 Fieselregen jetzt. Trockene Zeitfenster: ${windowsList}`, 'muted');
           } else {
             showResult(`🌧 Kein trockenes Zeitfenster in den nächsten ${(searchWindow/3600000).toFixed(1)} Stunden`, 'danger');
           }
