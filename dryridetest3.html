@@ -243,7 +243,7 @@
     <header>
       <div>
         <h1>DryRide</h1>
-        <div class="sub">Trocken & smart radeln — Benachrichtigungen 1 h vorher</div>
+        <div class="sub">Trocken & smart radeln — Benachrichtigungen 30 min vorher</div>
       </div>
       <button id="notifyPermissionBtn" class="small-btn">🔔 Benachrichtigungen</button>
     </header>
@@ -614,6 +614,112 @@
       });
     }
   }
+
+  async function checkRouteNotifications() {
+    const rides = loadRides().filter(r => r.enabled); // Nur aktive Routen
+    const now = new Date();
+    const geocoder = new google.maps.Geocoder();
+    const directionsService = new google.maps.DirectionsService();
+    
+    for (const ride of rides) {
+      const [hours, minutes] = ride.time.split(':').map(Number);
+      let rideTimeToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes);
+      
+      // Für einmalige Routen: Prüfe, ob Datum in der Zukunft liegt
+      if (ride.repeat === 'once') {
+        const rideDate = new Date(ride.time); // Annahme: ride.time enthält Datum für einmalige Routen
+        if (rideDate < now) continue; // Überspringe vergangene Routen
+        rideTimeToday = rideDate;
+      }
+      
+      const notifyTime = new Date(rideTimeToday.getTime() - 30 * 60 * 1000); // 30 min vorher
+      if (notifyTime < now) continue; // Überspringe, wenn Benachrichtigung in der Vergangenheit
+      
+      // Geocode Start und Ziel
+      await geocoder.geocode({ address: ride.originAddress }, async function(results1, status1) {
+        if (status1 !== 'OK' || !results1[0]) return;
+        const loc1 = results1[0].geometry.location;
+        await geocoder.geocode({ address: ride.destinationAddress || localStorage.getItem(KEY_HOME) }, async function(results2, status2) {
+          if (status2 !== 'OK' || !results2[0]) return;
+          const loc2 = results2[0].geometry.location;
+          
+          // Route berechnen
+          await directionsService.route({
+            origin: ride.originAddress,
+            destination: ride.destinationAddress || localStorage.getItem(KEY_HOME),
+            travelMode: google.maps.TravelMode.BICYCLING
+          }, async (result, status) => {
+            if (status !== 'OK') return;
+            const duration = result.routes[0].legs[0].duration.value * 1000;
+            const path = result.routes[0].overview_path;
+            
+            // Punkte entlang der Route
+            const points = [];
+            for (let i = 0; i <= Math.ceil(duration / (5*60*1000)); i++) {
+              const progress = Math.min(i * 5 * 60 * 1000 / duration, 1);
+              const index = Math.floor(progress * (path.length - 1));
+              const point = path[index];
+              const timeAtPoint = new Date(rideTimeToday.getTime() + progress * duration);
+              points.push({ lat: point.lat(), lng: point.lng(), time: timeAtPoint });
+            }
+            
+            // Prüfe Niederschlag im Trockenfenster
+            const windowMs = ride.window * 60 * 1000;
+            let isDry = true;
+            const wetWindows = [];
+            for (let offset = 0; offset <= windowMs; offset += 5 * 60 * 1000) {
+              const checkTime = new Date(rideTimeToday.getTime() + offset);
+              for (const point of points) {
+                const pointTime = new Date(checkTime.getTime() + (point.time - rideTimeToday));
+                const { isRain } = await getPrecipAtTime(point.lat, point.lng, pointTime);
+                if (isRain) {
+                  isDry = false;
+                  wetWindows.push({
+                    start: new Date(checkTime.getTime() - 2.5 * 60 * 1000),
+                    end: new Date(checkTime.getTime() + 2.5 * 60 * 1000)
+                  });
+                  break;
+                }
+              }
+            }
+            
+            // Suche nächstes trockenes Fenster (±2 Stunden)
+            let recommendedTime = null;
+            const searchWindow = 2 * 3600 * 1000; // ±2 Stunden
+            for (let offset = -searchWindow; offset <= searchWindow; offset += windowMs) {
+              const checkStart = new Date(rideTimeToday.getTime() + offset);
+              if (checkStart < now) continue;
+              let isWindowDry = true;
+              for (const point of points) {
+                const checkTime = new Date(checkStart.getTime() + (point.time - rideTimeToday));
+                const { isRain } = await getPrecipAtTime(point.lat, point.lng, checkTime);
+                if (isRain) { isWindowDry = false; break; }
+              }
+              if (isWindowDry) {
+                recommendedTime = checkStart;
+                break;
+              }
+            }
+            
+            // Benachrichtigung 30 min vorher
+            if (isDry) {
+              setTimeout(() => {
+                sendNotification(`Route ${ride.title}: Trockenes Fenster um ${rideTimeToday.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}. Losfahren!`);
+              }, notifyTime - now);
+            } else {
+              const wetList = wetWindows.length > 0 ? wetWindows.map(w => `${w.start.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}–${w.end.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`).join(', ') : 'unbekannt';
+              const recommendStr = recommendedTime ? `Stattdessen um ${recommendedTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} losfahren.` : 'Kein trockenes Fenster in ±2h.';
+              setTimeout(() => {
+                sendNotification(`Route ${ride.title}: Regen ${wetList}. ${recommendStr}`);
+              }, notifyTime - now);
+            }
+          });
+        });
+      });
+    }
+  }
+  setInterval(checkRouteNotifications, 5 * 60 * 1000); // Alle 5 Minuten prüfen
+  checkRouteNotifications(); // Initiale Prüfung
 
   function loadRideIntoForm(id) {
     const r = loadRides().find(x => x.id === id); if (!r) return;
